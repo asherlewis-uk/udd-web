@@ -47,9 +47,8 @@ export type StreamHooks = {
 export async function generateResult(
   ctx: PromptContext,
   hooks?: StreamHooks,
-  providerOverride?: ProviderConfig,
 ): Promise<AITaskResult> {
-  const provider = providerOverride ?? getActiveProvider()
+  const provider = getActiveProvider()
   if (hooks?.onStart) {
     await hooks.onStart({ provider })
   }

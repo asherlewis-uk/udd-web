@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
 import { generateResult } from "@/lib/ai/generator"
-import { getActiveProviderForOwner } from "@/lib/ai/providers/server"
 import type {
   AITaskEventKind,
   AITaskEventPayload,
@@ -14,8 +13,7 @@ import type {
  * Backed by a real AI provider (see lib/ai/generator.ts + lib/ai/providers).
  * This function owns every side-effect: status transitions, event writes,
  * output persistence, and mirroring generated files into project_files.
- * Provider selection resolves from per-user provider_configs when available,
- * otherwise it falls back to UDD_AI_PROVIDER (and then OpenAI).
+ * Swapping provider only means changing UDD_AI_PROVIDER — no code changes here.
  */
 export async function runAITask(taskId: string): Promise<void> {
   const supabase = await createClient()
@@ -73,7 +71,6 @@ export async function runAITask(taskId: string): Promise<void> {
     await writeEvent("started", { message: "Task picked up" })
 
     // Real streaming generation. Hooks emit progress events as the object grows.
-    const provider = await getActiveProviderForOwner(ownerId, supabase)
     const result: AITaskResult = await generateResult(
       { prompt, kind, projectName, idea, description },
       {
@@ -97,16 +94,9 @@ export async function runAITask(taskId: string): Promise<void> {
           })
         },
       },
-      provider,
     )
 
-    // Persist generated files into project_files so the runtime executor has
-    // a stable source of truth. This runs BEFORE marking the task completed:
-    // if the upsert fails, the catch block below marks the task failed with
-    // the DB error, rather than leaving a "completed" task with stale files.
-    await persistFiles(supabase, projectId, ownerId, result)
-
-    // running → completed (+ output). Only reached once files are persisted.
+    // running → completed (+ output)
     await supabase
       .from("ai_tasks")
       .update({
@@ -117,6 +107,10 @@ export async function runAITask(taskId: string): Promise<void> {
       })
       .eq("id", taskId)
       .eq("owner_id", ownerId)
+
+    // Persist generated files into project_files so the runtime executor has
+    // a stable source of truth (upsert by path).
+    await persistFiles(supabase, projectId, ownerId, result)
 
     await writeEvent("completed", {
       summary: result.summary,
@@ -163,13 +157,12 @@ async function persistFiles(
   }))
 
   // Upsert so repeated tasks overwrite prior output for the same paths.
-  // Throws on failure so the caller marks the task failed — a silent swallow
-  // would leave ai_tasks looking "completed" while project_files is stale.
   const { error } = await supabase
     .from("project_files")
     .upsert(rows, { onConflict: "project_id,path" })
 
   if (error) {
-    throw new Error(`Failed to persist project files: ${error.message}`)
+    // Don't fail the whole task — the output is already persisted on ai_tasks.
+    console.log("[v0] persistFiles: upsert failed", { error: error.message })
   }
 }

@@ -1,11 +1,10 @@
 import Link from "next/link"
-import { CheckCircle2, Circle, CircleAlert, CircleDot, ExternalLink, Loader2, Play, RotateCw } from "lucide-react"
+import { CheckCircle2, Circle, CircleAlert, CircleDot, ExternalLink, Loader2, Play } from "lucide-react"
 import { AIStatusBadge } from "@/components/ai/ai-status-badge"
 import { Button } from "@/components/ui/button"
 import { formatRelative } from "@/lib/slug"
 import { cn } from "@/lib/utils"
 import type { AITaskEventRow, AITaskResult, AITaskRow } from "@/lib/ai/types"
-import { retryPendingTask } from "@/app/actions/ai"
 import { startRunFromTaskAction } from "@/app/actions/run"
 
 type EventLike = Pick<AITaskEventRow, "id" | "kind" | "payload" | "created_at">
@@ -40,7 +39,6 @@ export function TaskDetail({
         </div>
         <div className="flex items-center gap-2">
           <AIStatusBadge status={task.status} />
-          <RetryPendingControl task={task} projectId={projectId} />
           <RunFromTaskControl task={task} projectId={projectId} />
         </div>
       </header>
@@ -203,21 +201,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
       {children}
     </span>
-  )
-}
-
-function RetryPendingControl({ task, projectId }: { task: AITaskRow; projectId: string }) {
-  if (task.status !== "pending") return null
-
-  return (
-    <form action={retryPendingTask}>
-      <input type="hidden" name="task_id" value={task.id} />
-      <input type="hidden" name="project_id" value={projectId} />
-      <Button size="sm" variant="secondary" type="submit">
-        <RotateCw className="mr-1.5 h-3.5 w-3.5" />
-        Retry
-      </Button>
-    </form>
   )
 }
 
