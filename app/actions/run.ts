@@ -7,8 +7,8 @@ import { createClient } from "@/lib/supabase/server"
 import { driveSession, startRun, stopRun } from "@/lib/runtime/service"
 
 /**
- * Create a run session and schedule simulated lifecycle processing after
- * the response is flushed. Returns the new session id.
+ * Create a run session and schedule the real executor to drive it after
+ * the response is flushed.
  */
 export async function startRunAction(formData: FormData): Promise<void> {
   const projectId = String(formData.get("project_id") ?? "").trim()
@@ -75,7 +75,14 @@ export async function startRunFromTaskAction(formData: FormData): Promise<void> 
       .select("status")
       .eq("id", sessionId)
       .single()
-    if (!existing || existing.status === "stopped" || existing.status === "error") {
+    // Treat 'stopping' as non-reusable too — the session is on its way out,
+    // reusing it would race with stopRun's terminal transition.
+    if (
+      !existing ||
+      existing.status === "stopped" ||
+      existing.status === "error" ||
+      existing.status === "stopping"
+    ) {
       sessionId = null
     }
   }

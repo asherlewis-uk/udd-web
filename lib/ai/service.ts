@@ -62,12 +62,24 @@ export async function runAITask(taskId: string): Promise<void> {
   }
 
   try {
-    // pending → running
-    await supabase
+    // pending → running. Conditional on status=pending so that if two
+    // drivers race (e.g. double-click retry, or create+retry overlap), only
+    // the first one actually claims the task. The other returns cleanly.
+    const { data: claimed, error: claimError } = await supabase
       .from("ai_tasks")
       .update({ status: "running", started_at: new Date().toISOString() })
       .eq("id", taskId)
       .eq("owner_id", ownerId)
+      .eq("status", "pending")
+      .select("id")
+    if (claimError) {
+      console.log("[v0] runAITask: claim failed", { taskId, error: claimError.message })
+      return
+    }
+    if (!claimed || claimed.length === 0) {
+      // Another driver won the race — nothing to do.
+      return
+    }
     await writeEvent("started", { message: "Task picked up" })
 
     // Real streaming generation. Hooks emit progress events as the object grows.
@@ -96,8 +108,12 @@ export async function runAITask(taskId: string): Promise<void> {
       },
     )
 
-    // running → completed (+ output)
-    await supabase
+    // running → completed (+ output). Gate on status=running so a concurrent
+    // cancel/fail can't be silently overwritten. If this write fails, surface
+    // it via the catch so the task ends up 'failed' with a real message
+    // instead of being stuck in 'running' while the event log says
+    // 'completed'.
+    const { error: completeError } = await supabase
       .from("ai_tasks")
       .update({
         status: "completed",
@@ -107,9 +123,15 @@ export async function runAITask(taskId: string): Promise<void> {
       })
       .eq("id", taskId)
       .eq("owner_id", ownerId)
+      .eq("status", "running")
+    if (completeError) {
+      throw new Error(`Failed to persist task output: ${completeError.message}`)
+    }
 
     // Persist generated files into project_files so the runtime executor has
-    // a stable source of truth (upsert by path).
+    // a stable source of truth (upsert by path). Errors here are non-fatal:
+    // ai_tasks.output remains the durable record, and the executor falls
+    // back to it when project_files is empty.
     await persistFiles(supabase, projectId, ownerId, result)
 
     await writeEvent("completed", {

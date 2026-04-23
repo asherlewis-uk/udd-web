@@ -89,6 +89,23 @@ export async function saveAIProviderConfig(input: SaveAIProviderConfigInput): Pr
     { onConflict: "owner_id,kind,name" },
   )
 
-  if (error) throw new Error(error.message)
+  if (error) {
+    // 23505 = unique_violation. The partial index
+    // provider_configs_one_default_per_kind allows at most one
+    // is_default=true row per (owner, kind). Two concurrent saves for
+    // different providers with setAsDefault=true can race here: the
+    // "unset others" step is not transactional with this upsert, so the
+    // second writer can collide. The invariant is preserved (one default
+    // still wins), so we treat this specific case as a benign lost-update
+    // and let the user re-click if they meant a different provider.
+    const pgCode = (error as { code?: string }).code
+    if (setAsDefault && pgCode === "23505") {
+      console.log("[v0] saveAIProviderConfig: concurrent default save lost race", {
+        pgCode,
+      })
+    } else {
+      throw new Error(error.message)
+    }
+  }
   revalidatePath("/settings")
 }

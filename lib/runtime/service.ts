@@ -71,11 +71,16 @@ export async function stopRun(sessionId: string): Promise<void> {
   if (!session) return
   if (!(session.status === "running" || session.status === "starting")) return
 
-  await supabase
+  // running/starting → stopping. Conditional so a concurrent stop or an
+  // error-path terminal write can't be silently reversed.
+  const { data: toStopping } = await supabase
     .from("run_sessions")
     .update({ status: "stopping" })
     .eq("id", sessionId)
     .eq("owner_id", user.id)
+    .in("status", ["running", "starting"])
+    .select("id")
+  if (!toStopping || toStopping.length === 0) return
 
   await writeEvent(supabase, {
     session_id: sessionId,
@@ -86,7 +91,8 @@ export async function stopRun(sessionId: string): Promise<void> {
     message: "Stopping...",
   })
 
-  await supabase
+  // stopping → stopped. Conditional for the same reason as above.
+  const { data: toStopped } = await supabase
     .from("run_sessions")
     .update({
       status: "stopped",
@@ -94,6 +100,9 @@ export async function stopRun(sessionId: string): Promise<void> {
     })
     .eq("id", sessionId)
     .eq("owner_id", user.id)
+    .eq("status", "stopping")
+    .select("id")
+  if (!toStopped || toStopped.length === 0) return
 
   await writeEvent(supabase, {
     session_id: sessionId,
@@ -179,6 +188,8 @@ export async function driveSession(sessionId: string): Promise<void> {
 
     if (errorCount > 0) {
       const message = `Build failed — ${errorCount} of ${files.length} file${files.length === 1 ? "" : "s"} did not parse.`
+      // Only terminalize if we're still the active driver — avoid stomping
+      // on a concurrent stop that already moved the session to stopped.
       await supabase
         .from("run_sessions")
         .update({
@@ -188,6 +199,7 @@ export async function driveSession(sessionId: string): Promise<void> {
         })
         .eq("id", sessionId)
         .eq("owner_id", ownerId)
+        .in("status", ["starting", "running"])
 
       await writeEvent(supabase, {
         session_id: sessionId,
@@ -200,7 +212,9 @@ export async function driveSession(sessionId: string): Promise<void> {
       return
     }
 
-    // All files parsed — mark running, publish preview.
+    // All files parsed — mark running, publish preview. Conditional update
+    // so a duplicate driver or a concurrent stop doesn't resurrect the
+    // session into 'running'.
     await writeEvent(supabase, {
       session_id: sessionId,
       project_id: projectId,
@@ -210,11 +224,18 @@ export async function driveSession(sessionId: string): Promise<void> {
       message: `Build succeeded — ${okCount} file${okCount === 1 ? "" : "s"} parsed cleanly.`,
     })
 
-    await supabase
+    const { data: promoted } = await supabase
       .from("run_sessions")
       .update({ status: "running", preview_url: previewUrl })
       .eq("id", sessionId)
       .eq("owner_id", ownerId)
+      .eq("status", "starting")
+      .select("id")
+    if (!promoted || promoted.length === 0) {
+      // Lost the race — another driver already terminalized this session
+      // (or the user stopped it). Skip preview side-effects.
+      return
+    }
 
     await supabase.from("previews").insert({
       project_id: projectId,
@@ -239,6 +260,8 @@ export async function driveSession(sessionId: string): Promise<void> {
       .eq("owner_id", ownerId)
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown runtime error"
+    // Only terminalize if we're still the active driver — don't overwrite
+    // a concurrent stop or a prior error already written by another driver.
     await supabase
       .from("run_sessions")
       .update({
@@ -248,6 +271,7 @@ export async function driveSession(sessionId: string): Promise<void> {
       })
       .eq("id", sessionId)
       .eq("owner_id", ownerId)
+      .in("status", ["starting", "running"])
     await writeEvent(supabase, {
       session_id: sessionId,
       project_id: projectId,
