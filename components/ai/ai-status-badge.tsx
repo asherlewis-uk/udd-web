@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils"
-import type { AiTaskStatus } from "@/lib/types"
+import type { AITaskStatus } from "@/lib/types"
 
-const TONE: Record<AiTaskStatus, string> = {
+const TONE: Record<AITaskStatus, string> = {
   pending: "border-border bg-card text-muted-foreground",
   running: "border-accent/40 bg-accent/10 text-accent",
   completed: "border-border bg-secondary text-foreground",
@@ -9,7 +9,7 @@ const TONE: Record<AiTaskStatus, string> = {
   cancelled: "border-border bg-card text-muted-foreground",
 }
 
-const LABEL: Record<AiTaskStatus, string> = {
+const LABEL: Record<AITaskStatus, string> = {
   pending: "Pending",
   running: "Running",
   completed: "Completed",
@@ -21,7 +21,7 @@ export function AIStatusBadge({
   status,
   className,
 }: {
-  status: AiTaskStatus
+  status: AITaskStatus
   className?: string
 }) {
   return (

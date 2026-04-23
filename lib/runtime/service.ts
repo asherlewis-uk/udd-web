@@ -49,6 +49,13 @@ export async function startRun(projectId: string): Promise<string> {
     message: "Booting sandbox...",
   })
 
+  // Touch project so activity reflects immediately on the list.
+  await supabase
+    .from("projects")
+    .update({ status: "active", last_opened_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .eq("owner_id", user.id)
+
   return session.id
 }
 

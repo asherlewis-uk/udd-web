@@ -59,12 +59,20 @@ export async function createAITask(formData: FormData) {
     .single()
   if (taskError) throw new Error(taskError.message)
 
-  // 3. Schedule simulated processing after the response is flushed.
+  // 3. Touch the parent project so activity surfaces on the list immediately.
+  await supabase
+    .from("projects")
+    .update({ status: "active", last_opened_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .eq("owner_id", user.id)
+
+  // 4. Schedule simulated processing after the response is flushed.
   after(async () => {
     await runAITask(taskRow.id)
   })
 
   revalidatePath(`/projects/${projectId}/ai`)
+  revalidatePath("/projects")
   redirect(`/projects/${projectId}/ai?task=${taskRow.id}`)
 }
 

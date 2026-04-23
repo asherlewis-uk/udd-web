@@ -23,11 +23,18 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { StatusPill } from "@/components/status-pill"
+import { ActivitySummary, type ProjectActivity } from "@/components/projects/activity-summary"
 import { formatRelative } from "@/lib/slug"
 import { deleteProject, updateProjectStatus } from "@/app/actions/projects"
 import type { Project } from "@/lib/types"
 
-export function ProjectCard({ project }: { project: Project }) {
+export function ProjectCard({
+  project,
+  activity,
+}: {
+  project: Project
+  activity?: ProjectActivity
+}) {
   const [pending, startTransition] = useTransition()
 
   const archived = project.status === "archived"
@@ -52,10 +59,16 @@ export function ProjectCard({ project }: { project: Project }) {
         <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
           {project.description || project.idea || "No description yet."}
         </p>
-        <div className="mt-auto flex items-center justify-between text-xs text-muted-foreground">
-          <span>Opened {formatRelative(project.last_opened_at ?? project.updated_at)}</span>
-          <span>Updated {formatRelative(project.updated_at)}</span>
-        </div>
+        {activity ? (
+          <div className="mt-auto border-t border-border pt-3">
+            <ActivitySummary activity={activity} />
+          </div>
+        ) : (
+          <div className="mt-auto flex items-center justify-between text-xs text-muted-foreground">
+            <span>Opened {formatRelative(project.last_opened_at ?? project.updated_at)}</span>
+            <span>Updated {formatRelative(project.updated_at)}</span>
+          </div>
+        )}
       </Link>
 
       <div className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100 focus-within:opacity-100">

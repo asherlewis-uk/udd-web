@@ -1,4 +1,4 @@
-import type { AiTaskStatus } from "@/lib/types"
+import type { AITaskStatus } from "@/lib/types"
 
 export type AITaskKind = "scaffold" | "edit" | "refactor" | "explain" | "other"
 
@@ -34,10 +34,11 @@ export type AITaskRow = {
   prompt_id: string | null
   kind: AITaskKind
   title: string
-  status: AiTaskStatus
+  status: AITaskStatus
   input: Record<string, unknown>
   output: AITaskResult | null
   error: string | null
+  run_session_id: string | null
   created_at: string
   started_at: string | null
   finished_at: string | null

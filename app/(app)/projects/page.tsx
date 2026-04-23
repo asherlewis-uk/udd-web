@@ -10,9 +10,10 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { ProjectCard } from "@/components/projects/project-card"
+import type { ProjectActivity } from "@/components/projects/activity-summary"
 import { ProjectFilters } from "@/components/projects/project-filters"
 import { createClient } from "@/lib/supabase/server"
-import type { Project } from "@/lib/types"
+import type { AITaskStatus, Project, RunStatus } from "@/lib/types"
 
 export const metadata = {
   title: "Projects — UDD",
@@ -24,10 +25,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: SP 
   const { q = "", status = "all" } = await searchParams
   const supabase = await createClient()
 
-  let query = supabase
-    .from("projects")
-    .select("*")
-    .order("updated_at", { ascending: false })
+  let query = supabase.from("projects").select("*").order("updated_at", { ascending: false })
 
   if (status && status !== "all") {
     query = query.eq("status", status)
@@ -39,6 +37,61 @@ export default async function ProjectsPage({ searchParams }: { searchParams: SP 
 
   const { data, error } = await query
   const projects = (data ?? []) as Project[]
+
+  // Batch-fetch latest AI task and latest run session for activity surfacing.
+  const activityMap = new Map<string, ProjectActivity>()
+  if (projects.length > 0) {
+    const projectIds = projects.map((p) => p.id)
+    const [tasksRes, runsRes] = await Promise.all([
+      supabase
+        .from("ai_tasks")
+        .select("project_id, title, status, created_at")
+        .in("project_id", projectIds)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("run_sessions")
+        .select("project_id, status, created_at")
+        .in("project_id", projectIds)
+        .order("created_at", { ascending: false }),
+    ])
+
+    const latestTasks = new Map<
+      string,
+      { title: string; status: AITaskStatus; created_at: string }
+    >()
+    for (const row of (tasksRes.data ?? []) as Array<{
+      project_id: string
+      title: string
+      status: AITaskStatus
+      created_at: string
+    }>) {
+      if (!latestTasks.has(row.project_id)) {
+        latestTasks.set(row.project_id, {
+          title: row.title,
+          status: row.status,
+          created_at: row.created_at,
+        })
+      }
+    }
+
+    const latestRuns = new Map<string, { status: RunStatus; created_at: string }>()
+    for (const row of (runsRes.data ?? []) as Array<{
+      project_id: string
+      status: RunStatus
+      created_at: string
+    }>) {
+      if (!latestRuns.has(row.project_id)) {
+        latestRuns.set(row.project_id, { status: row.status, created_at: row.created_at })
+      }
+    }
+
+    for (const p of projects) {
+      activityMap.set(p.id, {
+        latestTask: latestTasks.get(p.id) ?? null,
+        latestRun: latestRuns.get(p.id) ?? null,
+      })
+    }
+  }
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-5 py-8">
@@ -90,7 +143,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: SP 
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {projects.map((p) => (
-            <ProjectCard key={p.id} project={p} />
+            <ProjectCard key={p.id} project={p} activity={activityMap.get(p.id)} />
           ))}
         </div>
       )}

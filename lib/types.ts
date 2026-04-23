@@ -34,4 +34,6 @@ export type ProjectFile = {
 }
 
 export type RunStatus = "idle" | "starting" | "running" | "stopping" | "stopped" | "error"
-export type AiTaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled"
+export type AITaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled"
+/** @deprecated use AITaskStatus */
+export type AiTaskStatus = AITaskStatus

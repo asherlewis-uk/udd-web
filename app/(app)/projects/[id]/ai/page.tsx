@@ -47,7 +47,7 @@ export default async function AiPage({
     const { data: taskData } = await supabase
       .from("ai_tasks")
       .select(
-        "id, project_id, prompt_id, kind, title, status, input, output, error, created_at, started_at, finished_at",
+        "id, project_id, prompt_id, kind, title, status, input, output, error, run_session_id, created_at, started_at, finished_at",
       )
       .eq("id", activeTaskId)
       .single()
@@ -113,6 +113,7 @@ export default async function AiPage({
                 task={selectedTask}
                 events={selectedEvents}
                 prompt={selectedPrompt}
+                projectId={id}
               />
             ) : (
               <div className="flex h-full min-h-48 items-center justify-center rounded-lg border border-dashed border-border bg-card/40 p-6 text-sm text-muted-foreground">

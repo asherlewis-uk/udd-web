@@ -1,8 +1,11 @@
-import { CheckCircle2, Circle, CircleAlert, CircleDot, Loader2 } from "lucide-react"
+import Link from "next/link"
+import { CheckCircle2, Circle, CircleAlert, CircleDot, ExternalLink, Loader2, Play } from "lucide-react"
 import { AIStatusBadge } from "@/components/ai/ai-status-badge"
+import { Button } from "@/components/ui/button"
 import { formatRelative } from "@/lib/slug"
 import { cn } from "@/lib/utils"
 import type { AITaskEventRow, AITaskResult, AITaskRow } from "@/lib/ai/types"
+import { startRunFromTaskAction } from "@/app/actions/run"
 
 type EventLike = Pick<AITaskEventRow, "id" | "kind" | "payload" | "created_at">
 
@@ -10,10 +13,12 @@ export function TaskDetail({
   task,
   events,
   prompt,
+  projectId,
 }: {
   task: AITaskRow
   events: EventLike[]
   prompt: string | null
+  projectId: string
 }) {
   return (
     <section className="flex flex-col overflow-hidden rounded-lg border border-border bg-card">
@@ -32,7 +37,10 @@ export function TaskDetail({
             ) : null}
           </div>
         </div>
-        <AIStatusBadge status={task.status} />
+        <div className="flex items-center gap-2">
+          <AIStatusBadge status={task.status} />
+          <RunFromTaskControl task={task} projectId={projectId} />
+        </div>
       </header>
 
       <div className="flex flex-col divide-y divide-border">
@@ -193,5 +201,30 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
       {children}
     </span>
+  )
+}
+
+function RunFromTaskControl({ task, projectId }: { task: AITaskRow; projectId: string }) {
+  if (task.status !== "completed") return null
+
+  if (task.run_session_id) {
+    return (
+      <Button asChild size="sm" variant="secondary">
+        <Link href={`/projects/${projectId}/run`}>
+          <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+          View run
+        </Link>
+      </Button>
+    )
+  }
+
+  return (
+    <form action={startRunFromTaskAction}>
+      <input type="hidden" name="task_id" value={task.id} />
+      <Button size="sm" type="submit">
+        <Play className="mr-1.5 h-3.5 w-3.5" />
+        Run this result
+      </Button>
+    </form>
   )
 }
