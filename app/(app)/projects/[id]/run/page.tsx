@@ -1,84 +1,109 @@
-import { Play } from "lucide-react"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
+import { notFound } from "next/navigation"
 import { WorkspaceContainer, SectionHeading } from "@/components/workspace/workspace-container"
+import { RunControls } from "@/components/run/run-controls"
+import { RunStatusBadge } from "@/components/run/run-status-badge"
+import { RunPoller } from "@/components/run/run-poller"
+import { LogStream } from "@/components/run/log-stream"
+import { PreviewPanel } from "@/components/run/preview-panel"
+import { SessionsHistory } from "@/components/run/sessions-history"
 import { createClient } from "@/lib/supabase/server"
-import { formatRelative } from "@/lib/slug"
-import { cn } from "@/lib/utils"
 import type { RunStatus } from "@/lib/types"
-
-const STATUS_TONE: Record<RunStatus, string> = {
-  idle: "text-muted-foreground",
-  starting: "text-muted-foreground",
-  running: "text-accent",
-  stopping: "text-muted-foreground",
-  stopped: "text-muted-foreground",
-  error: "text-destructive",
-}
 
 export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
-  const { data } = await supabase
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id, name")
+    .eq("id", id)
+    .maybeSingle()
+  if (!project) notFound()
+
+  const { data: sessionsData } = await supabase
     .from("run_sessions")
     .select("id, status, preview_url, started_at, stopped_at, created_at")
     .eq("project_id", id)
     .order("created_at", { ascending: false })
     .limit(20)
 
-  const sessions = data ?? []
+  const sessions = (sessionsData ?? []) as Array<{
+    id: string
+    status: RunStatus
+    preview_url: string | null
+    started_at: string | null
+    stopped_at: string | null
+    created_at: string
+  }>
+
+  const current = sessions[0] ?? null
+  const status: RunStatus = current?.status ?? "idle"
+
+  // Events for the current session (not the whole project) so the log panel
+  // tracks this run specifically.
+  const { data: eventsData } = current
+    ? await supabase
+        .from("run_events")
+        .select("id, level, source, message, created_at")
+        .eq("session_id", current.id)
+        .order("created_at", { ascending: true })
+        .limit(300)
+    : { data: [] as never[] }
+
+  const events = (eventsData ?? []) as Array<{
+    id: string
+    level: string
+    source: string
+    message: string
+    created_at: string
+  }>
+
+  const inFlight =
+    status === "starting" || status === "running" || status === "stopping"
 
   return (
     <WorkspaceContainer>
-      <SectionHeading
-        title="Run"
-        description="Preview this project in a sandboxed runtime."
-      />
+      <div className="flex items-start justify-between gap-4">
+        <SectionHeading
+          title="Run"
+          description="Boot a sandboxed runtime and watch the build stream in."
+        />
+        <div className="flex items-center gap-3 pt-1">
+          <RunStatusBadge status={status} />
+          <RunControls projectId={id} sessionId={current?.id ?? null} status={status} />
+        </div>
+      </div>
 
-      {sessions.length === 0 ? (
-        <Empty className="border border-dashed border-border bg-card/40">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <Play className="h-5 w-5" />
-            </EmptyMedia>
-            <EmptyTitle>No runs yet</EmptyTitle>
-            <EmptyDescription>
-              Runtime execution isn&apos;t wired up in this phase. When it is, starting a run will
-              boot a sandbox and show a live preview here.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border border-border">
-          {sessions.map((s) => (
-            <li
-              key={s.id}
-              className="flex items-center justify-between gap-4 bg-background px-4 py-3 text-sm"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-mono text-xs">{s.id}</div>
-                <div className="text-xs text-muted-foreground">
-                  Started {formatRelative(s.started_at ?? s.created_at)}
-                  {s.stopped_at ? ` · stopped ${formatRelative(s.stopped_at)}` : ""}
-                </div>
-              </div>
-              <span
-                className={cn(
-                  "font-mono text-xs uppercase tracking-wider",
-                  STATUS_TONE[s.status as RunStatus],
-                )}
-              >
-                {s.status}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div className="lg:col-span-3">
+          <PreviewPanel
+            status={status}
+            url={current?.preview_url ?? null}
+            projectName={project.name as string}
+          />
+        </div>
+        <div className="lg:col-span-2">
+          <LogStream
+            events={events}
+            emptyLabel={
+              current
+                ? "Warming up..."
+                : "No run yet. Press Start Run to boot a sandbox."
+            }
+          />
+        </div>
+      </div>
+
+      {sessions.length > 1 ? (
+        <section className="flex flex-col gap-2">
+          <span className="px-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Recent sessions
+          </span>
+          <SessionsHistory sessions={sessions.slice(1)} />
+        </section>
+      ) : null}
+
+      <RunPoller active={inFlight} />
     </WorkspaceContainer>
   )
 }
