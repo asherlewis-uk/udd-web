@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { runAITask } from "@/lib/ai/service"
-import { classifyPrompt } from "@/lib/ai/simulator"
+import { classifyPrompt } from "@/lib/ai/classify"
 
 async function getUser() {
   const supabase = await createClient()
@@ -66,7 +66,8 @@ export async function createAITask(formData: FormData) {
     .eq("id", projectId)
     .eq("owner_id", user.id)
 
-  // 4. Schedule simulated processing after the response is flushed.
+  // 4. Schedule processing after the response is flushed so the UI
+  //    returns immediately and the real model call runs in the background.
   after(async () => {
     await runAITask(taskRow.id)
   })

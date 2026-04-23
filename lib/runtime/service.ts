@@ -1,16 +1,12 @@
 import { createClient } from "@/lib/supabase/server"
+import { analyzeFile, formatBytes, loadProjectFiles } from "@/lib/runtime/executor"
 
 /**
- * The only entry point for starting a simulated run.
- *
- * Creates a run_session, then drives it through a deterministic lifecycle
- * (starting → running → ready) while writing run_events along the way.
- * When ready, inserts a previews row with a mock URL.
- *
- * When a real runtime lands, replace the body of `driveSession` with a
- * call into the real sandbox adapter — the schema and surrounding actions
- * don't have to change.
+ * Public API (startRun / driveSession / stopRun) is unchanged. Internals are
+ * now backed by the real executor in lib/runtime/executor.ts: every event
+ * reflects actual source contents and real parse results.
  */
+
 export async function startRun(projectId: string): Promise<string> {
   const supabase = await createClient()
 
@@ -27,7 +23,6 @@ export async function startRun(projectId: string): Promise<string> {
     .single()
   if (projectError || !project) throw new Error("Project not found")
 
-  // Create the session in 'starting'.
   const { data: session, error: sessionError } = await supabase
     .from("run_sessions")
     .insert({
@@ -46,10 +41,9 @@ export async function startRun(projectId: string): Promise<string> {
     owner_id: user.id,
     level: "system",
     source: "system",
-    message: "Booting sandbox...",
+    message: "Run started.",
   })
 
-  // Touch project so activity reflects immediately on the list.
   await supabase
     .from("projects")
     .update({ status: "active", last_opened_at: new Date().toISOString() })
@@ -60,8 +54,7 @@ export async function startRun(projectId: string): Promise<string> {
 }
 
 /**
- * Stop a currently-running session. Transitions running → stopping → stopped
- * with a brief delay and a terminal event.
+ * Stop a currently-running session. Transitions running → stopping → stopped.
  */
 export async function stopRun(sessionId: string): Promise<void> {
   const supabase = await createClient()
@@ -90,10 +83,8 @@ export async function stopRun(sessionId: string): Promise<void> {
     owner_id: user.id,
     level: "system",
     source: "system",
-    message: "Stopping server...",
+    message: "Stopping...",
   })
-
-  await delay(500)
 
   await supabase
     .from("run_sessions")
@@ -115,9 +106,8 @@ export async function stopRun(sessionId: string): Promise<void> {
 }
 
 /**
- * Advance a session through its simulated lifecycle. Scheduled from the
- * server action via `after()` so it runs after the response is flushed.
- * Idempotent: it only runs when the session is still in 'starting'.
+ * Real execution driver: loads files, parses them, and records genuine
+ * per-file results. Scheduled from the server action via `after()`.
  */
 export async function driveSession(sessionId: string): Promise<void> {
   const supabase = await createClient()
@@ -134,61 +124,95 @@ export async function driveSession(sessionId: string): Promise<void> {
   const projectId = session.project_id as string
   const projectRel = session.projects as unknown as { slug?: string; name?: string } | null
   const slug = projectRel?.slug ?? "project"
-  const previewUrl = `https://preview.local/${slug}`
+  const previewUrl = `https://preview.local/${slug}?session=${sessionId.slice(0, 8)}`
 
   try {
-    // starting: ~1s boot
-    await delay(1000)
+    const files = await loadProjectFiles(supabase, projectId, ownerId)
+
+    if (files.length === 0) {
+      throw new Error(
+        "No files to execute. Run an AI task first to populate project files.",
+      )
+    }
+
+    const totalBytes = files.reduce(
+      (sum, f) => sum + new TextEncoder().encode(f.content).length,
+      0,
+    )
+
     await writeEvent(supabase, {
       session_id: sessionId,
       project_id: projectId,
       owner_id: ownerId,
       level: "info",
       source: "system",
-      message: "Installing dependencies...",
+      message: `Loaded ${files.length} file${files.length === 1 ? "" : "s"} (${formatBytes(totalBytes)}).`,
     })
 
-    // transition → running
-    await supabase
-      .from("run_sessions")
-      .update({ status: "running" })
-      .eq("id", sessionId)
-      .eq("owner_id", ownerId)
+    // Real per-file analysis. No artificial delay — timing reflects parser work.
+    let errorCount = 0
+    let okCount = 0
+    for (const file of files) {
+      const result = analyzeFile(file)
+      if (result.ok) {
+        okCount += 1
+        await writeEvent(supabase, {
+          session_id: sessionId,
+          project_id: projectId,
+          owner_id: ownerId,
+          level: "info",
+          source: "build",
+          message: `ok  ${file.path}  ${formatBytes(result.bytes)}`,
+        })
+      } else {
+        errorCount += 1
+        await writeEvent(supabase, {
+          session_id: sessionId,
+          project_id: projectId,
+          owner_id: ownerId,
+          level: "error",
+          source: "build",
+          message: `FAIL  ${file.path}: ${result.message ?? "Parse error"}`,
+        })
+      }
+    }
 
-    await delay(1200)
-    await writeEvent(supabase, {
-      session_id: sessionId,
-      project_id: projectId,
-      owner_id: ownerId,
-      level: "info",
-      source: "build",
-      message: "added 124 packages in 1.1s",
-    })
+    if (errorCount > 0) {
+      const message = `Build failed — ${errorCount} of ${files.length} file${files.length === 1 ? "" : "s"} did not parse.`
+      await supabase
+        .from("run_sessions")
+        .update({
+          status: "error",
+          error: message,
+          stopped_at: new Date().toISOString(),
+        })
+        .eq("id", sessionId)
+        .eq("owner_id", ownerId)
 
-    await delay(1000)
+      await writeEvent(supabase, {
+        session_id: sessionId,
+        project_id: projectId,
+        owner_id: ownerId,
+        level: "error",
+        source: "system",
+        message,
+      })
+      return
+    }
+
+    // All files parsed — mark running, publish preview.
     await writeEvent(supabase, {
       session_id: sessionId,
       project_id: projectId,
       owner_id: ownerId,
       level: "info",
       source: "stdout",
-      message: "Starting dev server on port 3000...",
+      message: `Build succeeded — ${okCount} file${okCount === 1 ? "" : "s"} parsed cleanly.`,
     })
 
-    await delay(1000)
-    await writeEvent(supabase, {
-      session_id: sessionId,
-      project_id: projectId,
-      owner_id: ownerId,
-      level: "info",
-      source: "stdout",
-      message: `Ready — served at ${previewUrl}`,
-    })
-
-    // Persist preview URL and create the preview record.
     await supabase
       .from("run_sessions")
-      .update({ preview_url: previewUrl })
+      .update({ status: "running", preview_url: previewUrl })
       .eq("id", sessionId)
       .eq("owner_id", ownerId)
 
@@ -199,7 +223,15 @@ export async function driveSession(sessionId: string): Promise<void> {
       url: previewUrl,
     })
 
-    // Touch the project to reflect activity.
+    await writeEvent(supabase, {
+      session_id: sessionId,
+      project_id: projectId,
+      owner_id: ownerId,
+      level: "info",
+      source: "stdout",
+      message: `Ready — served at ${previewUrl}`,
+    })
+
     await supabase
       .from("projects")
       .update({ status: "active", last_opened_at: new Date().toISOString() })
@@ -241,8 +273,4 @@ async function writeEvent(
   input: EventInput,
 ): Promise<void> {
   await supabase.from("run_events").insert(input)
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }

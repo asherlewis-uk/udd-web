@@ -1,14 +1,19 @@
 import { createClient } from "@/lib/supabase/server"
-import { generateResult } from "@/lib/ai/simulator"
-import type { AITaskEventKind, AITaskEventPayload, AITaskResult } from "@/lib/ai/types"
+import { generateResult } from "@/lib/ai/generator"
+import type {
+  AITaskEventKind,
+  AITaskEventPayload,
+  AITaskKind,
+  AITaskResult,
+} from "@/lib/ai/types"
 
 /**
  * The only entry point for executing an AI task.
  *
- * Today this is backed by a deterministic simulator in `lib/ai/simulator.ts`.
- * When real providers land, swap the `generateResult` call for a provider
- * adapter — the rest of this function (status transitions, events, output
- * persistence) stays the same.
+ * Backed by a real AI provider (see lib/ai/generator.ts + lib/ai/providers).
+ * This function owns every side-effect: status transitions, event writes,
+ * output persistence, and mirroring generated files into project_files.
+ * Swapping provider only means changing UDD_AI_PROVIDER — no code changes here.
  */
 export async function runAITask(taskId: string): Promise<void> {
   const supabase = await createClient()
@@ -16,7 +21,9 @@ export async function runAITask(taskId: string): Promise<void> {
   // Load the task. RLS guarantees it belongs to the caller.
   const { data: task, error: loadError } = await supabase
     .from("ai_tasks")
-    .select("id, project_id, owner_id, status, input, projects(name)")
+    .select(
+      "id, project_id, owner_id, kind, status, input, projects(name, idea, description)",
+    )
     .eq("id", taskId)
     .single()
 
@@ -32,19 +39,24 @@ export async function runAITask(taskId: string): Promise<void> {
 
   const ownerId = task.owner_id as string
   const projectId = task.project_id as string
+  const kind = task.kind as AITaskKind
   const input = (task.input ?? {}) as { prompt?: string }
   const prompt = typeof input.prompt === "string" ? input.prompt : ""
-  const projectName =
-    (task.projects as unknown as { name?: string } | null)?.name?.trim() || "Project"
+  const projectRel = task.projects as unknown as
+    | { name?: string; idea?: string | null; description?: string | null }
+    | null
+  const projectName = projectRel?.name?.trim() || "Project"
+  const idea = projectRel?.idea ?? null
+  const description = projectRel?.description ?? null
 
   const writeEvent = async (
-    kind: AITaskEventKind,
+    eventKind: AITaskEventKind,
     payload: AITaskEventPayload = {},
   ): Promise<void> => {
     await supabase.from("ai_task_events").insert({
       task_id: taskId,
       owner_id: ownerId,
-      kind,
+      kind: eventKind,
       payload,
     })
   }
@@ -58,17 +70,31 @@ export async function runAITask(taskId: string): Promise<void> {
       .eq("owner_id", ownerId)
     await writeEvent("started", { message: "Task picked up" })
 
-    // Simulated progress — fixed delays, no randomness.
-    await delay(700)
-    await writeEvent("progress", { step: "planning", message: "Analyzing prompt" })
-
-    await delay(700)
-    await writeEvent("progress", { step: "generating", message: "Drafting files" })
-
-    await delay(700)
-
-    // Produce the structured result via the pure simulator.
-    const result: AITaskResult = generateResult(prompt, projectName)
+    // Real streaming generation. Hooks emit progress events as the object grows.
+    const result: AITaskResult = await generateResult(
+      { prompt, kind, projectName, idea, description },
+      {
+        onStart: async ({ provider }) => {
+          await writeEvent("progress", {
+            step: "calling_model",
+            message: `Calling ${provider.label} (${provider.model})`,
+          })
+        },
+        onPartial: async ({ summaryChars, fileCount, latestFilePath }) => {
+          const message =
+            fileCount === 0
+              ? `Streaming response... (${summaryChars} chars)`
+              : latestFilePath
+                ? `Generating ${latestFilePath} (file ${fileCount})`
+                : `Generating file ${fileCount}`
+          await writeEvent("progress", {
+            step: "streaming",
+            message,
+            file_count: fileCount,
+          })
+        },
+      },
+    )
 
     // running → completed (+ output)
     await supabase
@@ -81,6 +107,10 @@ export async function runAITask(taskId: string): Promise<void> {
       })
       .eq("id", taskId)
       .eq("owner_id", ownerId)
+
+    // Persist generated files into project_files so the runtime executor has
+    // a stable source of truth (upsert by path).
+    await persistFiles(supabase, projectId, ownerId, result)
 
     await writeEvent("completed", {
       summary: result.summary,
@@ -108,6 +138,31 @@ export async function runAITask(taskId: string): Promise<void> {
   }
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
+async function persistFiles(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+  ownerId: string,
+  result: AITaskResult,
+): Promise<void> {
+  if (!result.files.length) return
+
+  const rows = result.files.map((f) => ({
+    project_id: projectId,
+    owner_id: ownerId,
+    path: f.path,
+    content: f.content,
+    language: f.language ?? null,
+    size_bytes: new TextEncoder().encode(f.content).length,
+    updated_at: new Date().toISOString(),
+  }))
+
+  // Upsert so repeated tasks overwrite prior output for the same paths.
+  const { error } = await supabase
+    .from("project_files")
+    .upsert(rows, { onConflict: "project_id,path" })
+
+  if (error) {
+    // Don't fail the whole task — the output is already persisted on ai_tasks.
+    console.log("[v0] persistFiles: upsert failed", { error: error.message })
+  }
 }
