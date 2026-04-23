@@ -29,7 +29,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
 
 const DEFAULT_PROVIDER: ProviderId = "openai"
 
-function isProviderId(value: string | undefined): value is ProviderId {
+export function isProviderId(value: string | undefined): value is ProviderId {
   return value === "openai" || value === "anthropic"
 }
 

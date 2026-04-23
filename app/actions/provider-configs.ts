@@ -1,0 +1,94 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { createClient } from "@/lib/supabase/server"
+import { isProviderId, type ProviderId } from "@/lib/ai/providers"
+
+type SaveAIProviderConfigInput = {
+  providerId: ProviderId
+  metadata?: Record<string, unknown> | null
+  setAsDefault?: boolean
+}
+
+const SECRETISH_KEY_PATTERN = /(key|token|secret|password)/i
+const SECRETISH_VALUE_PATTERN = /(sk-[a-z0-9_\-]{8,}|api[_-]?key|bearer\s+[a-z0-9._\-]{8,})/i
+
+function sanitizeMetadata(value: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  if (!value) return {}
+
+  const sanitized: Record<string, unknown> = {}
+  for (const [key, raw] of Object.entries(value)) {
+    if (SECRETISH_KEY_PATTERN.test(key)) {
+      throw new Error("Saving provider API keys is not supported yet. Use environment credentials.")
+    }
+    if (raw === null || typeof raw === "boolean" || typeof raw === "number") {
+      sanitized[key] = raw
+      continue
+    }
+    if (typeof raw === "string") {
+      if (SECRETISH_VALUE_PATTERN.test(raw)) {
+        throw new Error("Saving provider API keys is not supported yet. Use environment credentials.")
+      }
+      sanitized[key] = raw
+      continue
+    }
+    throw new Error("Metadata must contain only string, number, boolean, or null values.")
+  }
+
+  return sanitized
+}
+
+/**
+ * Stores per-user AI provider configuration.
+ * Stores provider selection + non-secret metadata only.
+ * Credentials are not user-configurable here and continue to come from env.
+ */
+export async function saveAIProviderConfig(input: SaveAIProviderConfigInput): Promise<void> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) throw new Error("Not authenticated")
+
+  const normalizedProvider = input.providerId?.toLowerCase()
+  if (!isProviderId(normalizedProvider)) {
+    throw new Error("Invalid provider id")
+  }
+
+  const config = sanitizeMetadata(input.metadata)
+  const setAsDefault = input.setAsDefault ?? true
+
+  // Existing schema has secret_ref, but this path intentionally does not use
+  // it because there is no external secret manager integration yet.
+  const { error: clearSecretError } = await supabase
+    .from("provider_configs")
+    .update({ secret_ref: null })
+    .eq("owner_id", user.id)
+    .eq("kind", "ai")
+  if (clearSecretError) throw new Error(clearSecretError.message)
+
+  if (setAsDefault) {
+    const { error: unsetError } = await supabase
+      .from("provider_configs")
+      .update({ is_default: false })
+      .eq("owner_id", user.id)
+      .eq("kind", "ai")
+    if (unsetError) throw new Error(unsetError.message)
+  }
+
+  const { error } = await supabase.from("provider_configs").upsert(
+    {
+      owner_id: user.id,
+      kind: "ai",
+      name: normalizedProvider,
+      config,
+      secret_ref: null,
+      is_active: true,
+      is_default: setAsDefault,
+    },
+    { onConflict: "owner_id,kind,name" },
+  )
+
+  if (error) throw new Error(error.message)
+  revalidatePath("/settings")
+}

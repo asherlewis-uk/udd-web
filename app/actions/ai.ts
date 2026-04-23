@@ -79,9 +79,14 @@ export async function createAITask(formData: FormData) {
 
 /**
  * Manually retry / run a task still in 'pending'. Useful if a previous
- * `after()` invocation didn't complete (e.g. server restart).
+ * `after()` invocation didn't complete (e.g. server restart). Accepts
+ * FormData so it can be wired directly to a <form action={...}>.
  */
-export async function retryPendingTask(taskId: string, projectId: string) {
+export async function retryPendingTask(formData: FormData) {
+  const taskId = String(formData.get("task_id") ?? "").trim()
+  const projectId = String(formData.get("project_id") ?? "").trim()
+  if (!taskId || !projectId) return
+
   const { supabase, user } = await getUser()
   const { data } = await supabase
     .from("ai_tasks")
