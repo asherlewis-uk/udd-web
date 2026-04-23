@@ -36,8 +36,7 @@ export default async function FilesPage({ params }: { params: Promise<{ id: stri
             </EmptyMedia>
             <EmptyTitle>No files yet</EmptyTitle>
             <EmptyDescription>
-              Once AI scaffolding or editing is wired up, files will appear here. For now this tab
-              is read-only.
+              Submit a prompt in the AI tab — generated files land here. This tab is read-only.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

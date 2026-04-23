@@ -66,7 +66,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
       <div className="flex items-start justify-between gap-4">
         <SectionHeading
           title="Run"
-          description="Boot a sandboxed runtime and watch the build stream in."
+          description="Parse-validate every file in this project. A real runtime is not available yet, so nothing is executed or served."
         />
         <div className="flex items-center gap-3 pt-1">
           <RunStatusBadge status={status} />

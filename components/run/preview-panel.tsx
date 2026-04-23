@@ -1,4 +1,4 @@
-import { Globe, Loader2, Play } from "lucide-react"
+import { CheckCircle2, Globe, Loader2, Play } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { RunStatus } from "@/lib/types"
 
@@ -49,18 +49,15 @@ export function PreviewPanel({
         />
 
         <div className="relative flex flex-col items-center gap-4 text-center">
-          {status === "running" && url ? (
+          {status === "running" ? (
             <>
               <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-accent/40 bg-accent/10 text-accent">
-                <Play className="h-5 w-5" />
+                <CheckCircle2 className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-sm font-medium">{projectName}</div>
-                <div className="mt-1 font-mono text-xs text-muted-foreground">
-                  served at {url}
-                </div>
-                <div className="mt-3 text-xs text-muted-foreground">
-                  Live preview iframe lands here when the runtime is real.
+                <div className="text-sm font-medium">{projectName} — validated</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Files parsed cleanly. No runtime available yet, so there is nothing to preview.
                 </div>
               </div>
             </>
@@ -69,14 +66,14 @@ export function PreviewPanel({
               <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-background">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
-              <div className="text-sm text-muted-foreground">Booting sandbox...</div>
+              <div className="text-sm text-muted-foreground">Validating files...</div>
             </>
           ) : status === "stopping" ? (
             <>
               <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-border bg-background">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
-              <div className="text-sm text-muted-foreground">Stopping server...</div>
+              <div className="text-sm text-muted-foreground">Stopping...</div>
             </>
           ) : status === "error" ? (
             <>
@@ -96,7 +93,7 @@ export function PreviewPanel({
               <div>
                 <div className="text-sm font-medium">No preview yet</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Start a run to boot a sandbox and see {projectName} served here.
+                  Start a run to parse-validate {projectName}. A real runtime is not available yet.
                 </div>
               </div>
             </>

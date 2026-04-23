@@ -3,8 +3,9 @@ import { analyzeFile, formatBytes, loadProjectFiles } from "@/lib/runtime/execut
 
 /**
  * Public API (startRun / driveSession / stopRun) is unchanged. Internals are
- * now backed by the real executor in lib/runtime/executor.ts: every event
- * reflects actual source contents and real parse results.
+ * backed by the executor in lib/runtime/executor.ts: every event reflects
+ * actual source contents and real parse results. There is no real runtime
+ * yet — a "successful" session means files parsed, not that anything is served.
  */
 
 export async function startRun(projectId: string): Promise<string> {
@@ -122,9 +123,6 @@ export async function driveSession(sessionId: string): Promise<void> {
 
   const ownerId = session.owner_id as string
   const projectId = session.project_id as string
-  const projectRel = session.projects as unknown as { slug?: string; name?: string } | null
-  const slug = projectRel?.slug ?? "project"
-  const previewUrl = `https://preview.local/${slug}?session=${sessionId.slice(0, 8)}`
 
   try {
     const files = await loadProjectFiles(supabase, projectId, ownerId)
@@ -178,7 +176,7 @@ export async function driveSession(sessionId: string): Promise<void> {
     }
 
     if (errorCount > 0) {
-      const message = `Build failed — ${errorCount} of ${files.length} file${files.length === 1 ? "" : "s"} did not parse.`
+      const message = `Validation failed — ${errorCount} of ${files.length} file${files.length === 1 ? "" : "s"} did not parse.`
       await supabase
         .from("run_sessions")
         .update({
@@ -200,37 +198,22 @@ export async function driveSession(sessionId: string): Promise<void> {
       return
     }
 
-    // All files parsed — mark running, publish preview.
+    // All files parsed. Transition to "running" means "validation succeeded" —
+    // no real runtime exists yet, so we do not publish a preview URL.
     await writeEvent(supabase, {
       session_id: sessionId,
       project_id: projectId,
       owner_id: ownerId,
       level: "info",
       source: "stdout",
-      message: `Build succeeded — ${okCount} file${okCount === 1 ? "" : "s"} parsed cleanly.`,
+      message: `Validated — ${okCount} file${okCount === 1 ? "" : "s"} parsed cleanly. No runtime available yet — preview is not served.`,
     })
 
     await supabase
       .from("run_sessions")
-      .update({ status: "running", preview_url: previewUrl })
+      .update({ status: "running" })
       .eq("id", sessionId)
       .eq("owner_id", ownerId)
-
-    await supabase.from("previews").insert({
-      project_id: projectId,
-      owner_id: ownerId,
-      session_id: sessionId,
-      url: previewUrl,
-    })
-
-    await writeEvent(supabase, {
-      session_id: sessionId,
-      project_id: projectId,
-      owner_id: ownerId,
-      level: "info",
-      source: "stdout",
-      message: `Ready — served at ${previewUrl}`,
-    })
 
     await supabase
       .from("projects")
