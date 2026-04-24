@@ -55,7 +55,7 @@ export function AIPromptForm({ projectId }: { projectId: string }) {
       />
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Simulated run —{" "}
+          Task lifecycle —{" "}
           <span className="font-mono text-[11px]">pending → running → completed</span>
         </p>
         <div className="flex items-center gap-3">
