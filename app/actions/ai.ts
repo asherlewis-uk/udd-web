@@ -97,3 +97,103 @@ export async function retryPendingTask(taskId: string, projectId: string) {
 
   revalidatePath(`/projects/${projectId}/ai`)
 }
+
+/**
+ * Cancel a task that is still pending or running. Flips status to
+ * 'cancelled'; any in-flight driver will detect this on its next gated
+ * update (stage / finalize) and short-circuit without emitting a
+ * spurious `completed` event.
+ */
+export async function cancelAITask(formData: FormData) {
+  const taskId = String(formData.get("task_id") ?? "").trim()
+  const projectId = String(formData.get("project_id") ?? "").trim()
+  if (!taskId || !projectId) throw new Error("Missing task id or project id")
+
+  const { supabase, user } = await getUser()
+
+  await supabase
+    .from("ai_tasks")
+    .update({
+      status: "cancelled",
+      error: "Cancelled by user.",
+      finished_at: new Date().toISOString(),
+    })
+    .eq("id", taskId)
+    .eq("owner_id", user.id)
+    .in("status", ["pending", "running"])
+
+  revalidatePath(`/projects/${projectId}/ai`)
+}
+
+/**
+ * Delete a task that is no longer live. Allowed only for terminal states
+ * (completed / failed / cancelled) so we never delete a task while a
+ * driver may still be writing to it. `ai_task_events` cascades via FK;
+ * the parent `prompts` row is preserved.
+ */
+export async function deleteAITask(formData: FormData) {
+  const taskId = String(formData.get("task_id") ?? "").trim()
+  const projectId = String(formData.get("project_id") ?? "").trim()
+  if (!taskId || !projectId) throw new Error("Missing task id or project id")
+
+  const { supabase, user } = await getUser()
+
+  await supabase
+    .from("ai_tasks")
+    .delete()
+    .eq("id", taskId)
+    .eq("owner_id", user.id)
+    .in("status", ["completed", "failed", "cancelled"])
+
+  revalidatePath(`/projects/${projectId}/ai`)
+  redirect(`/projects/${projectId}/ai`)
+}
+
+/**
+ * Create a fresh pending task from a failed / cancelled one. Copies the
+ * original prompt_id / kind / title / input so the new task carries the
+ * same history. The old task is kept intact for audit; the user can
+ * delete it separately if they want.
+ */
+export async function retryFailedTask(formData: FormData) {
+  const taskId = String(formData.get("task_id") ?? "").trim()
+  const projectId = String(formData.get("project_id") ?? "").trim()
+  if (!taskId || !projectId) throw new Error("Missing task id or project id")
+
+  const { supabase, user } = await getUser()
+
+  const { data: original } = await supabase
+    .from("ai_tasks")
+    .select("id, project_id, prompt_id, kind, title, input, status")
+    .eq("id", taskId)
+    .eq("owner_id", user.id)
+    .single()
+  if (!original) throw new Error("Task not found")
+  if (original.status !== "failed" && original.status !== "cancelled") {
+    throw new Error("Only failed or cancelled tasks can be retried.")
+  }
+
+  const { data: fresh, error: insertError } = await supabase
+    .from("ai_tasks")
+    .insert({
+      project_id: original.project_id,
+      owner_id: user.id,
+      prompt_id: original.prompt_id,
+      kind: original.kind,
+      title: original.title,
+      status: "pending",
+      input: original.input,
+    })
+    .select("id")
+    .single()
+  if (insertError || !fresh) {
+    throw new Error(insertError?.message ?? "Failed to create retry task")
+  }
+
+  after(async () => {
+    await runAITask(fresh.id)
+  })
+
+  revalidatePath(`/projects/${projectId}/ai`)
+  redirect(`/projects/${projectId}/ai?task=${fresh.id}`)
+}

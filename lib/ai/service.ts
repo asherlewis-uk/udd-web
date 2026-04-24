@@ -143,15 +143,22 @@ export async function runAITask(taskId: string): Promise<void> {
     // 'running'. This preserves the raw model output for diagnostics and
     // recovery even if the subsequent persist step fails and the task
     // ultimately ends up 'failed'. Gated on status=running so a concurrent
-    // cancel/fail can't be silently overwritten.
-    const { error: stageError } = await supabase
+    // cancel/fail can't be silently overwritten. If the gate matches zero
+    // rows the task was terminalized (e.g. cancelled) while the model was
+    // streaming — short-circuit without persisting or completing.
+    const { data: staged, error: stageError } = await supabase
       .from("ai_tasks")
       .update({ output: result })
       .eq("id", taskId)
       .eq("owner_id", ownerId)
       .eq("status", "running")
+      .select("id")
     if (stageError) {
       throw new Error(`Failed to stage task output: ${stageError.message}`)
+    }
+    if (!staged || staged.length === 0) {
+      // Cancelled or otherwise terminalized between claim and stage.
+      return
     }
 
     // Persist generated files into project_files. project_files is the
@@ -163,8 +170,10 @@ export async function runAITask(taskId: string): Promise<void> {
 
     // running → completed. Only reachable after files have been persisted,
     // so 'completed' now implies the Files tab and runtime have real data.
-    // Gated on status=running for the same concurrency reason as above.
-    const { error: completeError } = await supabase
+    // Gated on status=running for the same concurrency reason as above;
+    // if zero rows match we were cancelled after persistence (files are
+    // already on disk, but we must not emit a 'completed' event).
+    const { data: completed, error: completeError } = await supabase
       .from("ai_tasks")
       .update({
         status: "completed",
@@ -174,8 +183,15 @@ export async function runAITask(taskId: string): Promise<void> {
       .eq("id", taskId)
       .eq("owner_id", ownerId)
       .eq("status", "running")
+      .select("id")
     if (completeError) {
       throw new Error(`Failed to finalize task: ${completeError.message}`)
+    }
+    if (!completed || completed.length === 0) {
+      // Cancelled or otherwise terminalized after persistence — skip the
+      // completed event so the UI doesn't show a "completed" event on a
+      // task that ended up 'cancelled'.
+      return
     }
 
     await writeEvent("completed", {

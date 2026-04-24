@@ -1,11 +1,23 @@
 import Link from "next/link"
-import { CheckCircle2, Circle, CircleAlert, CircleDot, ExternalLink, Loader2, Play } from "lucide-react"
+import {
+  CheckCircle2,
+  Circle,
+  CircleAlert,
+  CircleDot,
+  ExternalLink,
+  Loader2,
+  Play,
+  RefreshCw,
+  Trash2,
+  XCircle,
+} from "lucide-react"
 import { AIStatusBadge } from "@/components/ai/ai-status-badge"
 import { Button } from "@/components/ui/button"
 import { formatRelative } from "@/lib/slug"
 import { cn } from "@/lib/utils"
 import type { AITaskEventRow, AITaskResult, AITaskRow } from "@/lib/ai/types"
 import { startRunFromTaskAction } from "@/app/actions/run"
+import { cancelAITask, deleteAITask, retryFailedTask } from "@/app/actions/ai"
 
 type EventLike = Pick<AITaskEventRow, "id" | "kind" | "payload" | "created_at">
 
@@ -39,6 +51,7 @@ export function TaskDetail({
         </div>
         <div className="flex items-center gap-2">
           <AIStatusBadge status={task.status} />
+          <TaskLifecycleControl task={task} projectId={projectId} />
           <RunFromTaskControl task={task} projectId={projectId} />
         </div>
       </header>
@@ -202,6 +215,54 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
       {children}
     </span>
   )
+}
+
+function TaskLifecycleControl({
+  task,
+  projectId,
+}: {
+  task: AITaskRow
+  projectId: string
+}) {
+  // Cancel is only meaningful while the task is still live.
+  if (task.status === "pending" || task.status === "running") {
+    return (
+      <form action={cancelAITask}>
+        <input type="hidden" name="task_id" value={task.id} />
+        <input type="hidden" name="project_id" value={projectId} />
+        <Button size="sm" variant="outline" type="submit">
+          <XCircle className="mr-1.5 h-3.5 w-3.5" />
+          Cancel
+        </Button>
+      </form>
+    )
+  }
+
+  // Failed and cancelled tasks can be retried or deleted.
+  if (task.status === "failed" || task.status === "cancelled") {
+    return (
+      <div className="flex items-center gap-2">
+        <form action={retryFailedTask}>
+          <input type="hidden" name="task_id" value={task.id} />
+          <input type="hidden" name="project_id" value={projectId} />
+          <Button size="sm" variant="secondary" type="submit">
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+            Retry
+          </Button>
+        </form>
+        <form action={deleteAITask}>
+          <input type="hidden" name="task_id" value={task.id} />
+          <input type="hidden" name="project_id" value={projectId} />
+          <Button size="sm" variant="ghost" type="submit">
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            Delete
+          </Button>
+        </form>
+      </div>
+    )
+  }
+
+  return null
 }
 
 function RunFromTaskControl({ task, projectId }: { task: AITaskRow; projectId: string }) {

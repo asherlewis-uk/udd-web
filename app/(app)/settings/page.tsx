@@ -23,6 +23,22 @@ export default async function SettingsPage() {
     .eq("id", user.id)
     .maybeSingle()
 
+  // Load the user's saved default AI provider (if any). The Select widget
+  // falls back to "openai" when nothing is saved so the UI always has a
+  // defined value; the action only writes when the user clicks Save.
+  const { data: defaultProvider } = await supabase
+    .from("provider_configs")
+    .select("name")
+    .eq("owner_id", user.id)
+    .eq("kind", "ai")
+    .eq("is_default", true)
+    .limit(1)
+    .maybeSingle()
+
+  const currentProviderId: ProviderId | null = isProviderId(defaultProvider?.name)
+    ? defaultProvider.name
+    : null
+
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-5 py-8">
       <div>
@@ -36,6 +52,13 @@ export default async function SettingsPage() {
         <h2 className="text-sm font-semibold tracking-tight">Profile</h2>
         <div className="rounded-lg border border-border bg-card p-6">
           <AccountForm email={user.email ?? ""} initialDisplayName={profile?.display_name ?? ""} />
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-semibold tracking-tight">AI Provider</h2>
+        <div className="rounded-lg border border-border bg-card p-6">
+          <ProviderForm currentProviderId={currentProviderId} />
         </div>
       </section>
 
