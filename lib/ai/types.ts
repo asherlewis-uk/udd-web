@@ -18,7 +18,14 @@ export type AITaskResult = {
   summary: string
 }
 
-export type AITaskEventKind = "started" | "progress" | "completed" | "failed"
+export type AITaskEventKind =
+  | "started"
+  | "progress"
+  | "completed"
+  | "failed"
+  | "validation"
+
+export type AITaskValidationSeverity = "blocking" | "warning" | "info"
 
 export type AITaskEventPayload = {
   step?: string
@@ -26,6 +33,15 @@ export type AITaskEventPayload = {
   file_count?: number
   summary?: string
   error?: string
+  /** Validation event fields (set when kind === "validation"). */
+  severity?: AITaskValidationSeverity
+  issue_kind?: string
+  file_path?: string
+  line?: number
+  suggestion?: string
+  blocking_count?: number
+  warning_count?: number
+  info_count?: number
 }
 
 export type AITaskRow = {

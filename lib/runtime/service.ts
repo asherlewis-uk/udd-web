@@ -131,9 +131,6 @@ export async function driveSession(sessionId: string): Promise<void> {
 
   const ownerId = session.owner_id as string
   const projectId = session.project_id as string
-  const projectRel = session.projects as unknown as { slug?: string; name?: string } | null
-  const slug = projectRel?.slug ?? "project"
-  const previewUrl = `https://preview.local/${slug}?session=${sessionId.slice(0, 8)}`
 
   try {
     const files = await loadProjectFiles(supabase, projectId, ownerId)
@@ -212,9 +209,11 @@ export async function driveSession(sessionId: string): Promise<void> {
       return
     }
 
-    // All files parsed — mark running, publish preview. Conditional update
-    // so a duplicate driver or a concurrent stop doesn't resurrect the
-    // session into 'running'.
+    // All files parsed — mark running. Conditional update so a duplicate
+    // driver or a concurrent stop doesn't resurrect the session into
+    // 'running'. No preview URL is written: nothing is actually served,
+    // and a synthetic URL would violate the Preview Truth invariant in
+    // CLAUDE.md. preview_url stays NULL.
     await writeEvent(supabase, {
       session_id: sessionId,
       project_id: projectId,
@@ -226,23 +225,16 @@ export async function driveSession(sessionId: string): Promise<void> {
 
     const { data: promoted } = await supabase
       .from("run_sessions")
-      .update({ status: "running", preview_url: previewUrl })
+      .update({ status: "running" })
       .eq("id", sessionId)
       .eq("owner_id", ownerId)
       .eq("status", "starting")
       .select("id")
     if (!promoted || promoted.length === 0) {
       // Lost the race — another driver already terminalized this session
-      // (or the user stopped it). Skip preview side-effects.
+      // (or the user stopped it). Skip follow-up side-effects.
       return
     }
-
-    await supabase.from("previews").insert({
-      project_id: projectId,
-      owner_id: ownerId,
-      session_id: sessionId,
-      url: previewUrl,
-    })
 
     await writeEvent(supabase, {
       session_id: sessionId,
@@ -250,7 +242,7 @@ export async function driveSession(sessionId: string): Promise<void> {
       owner_id: ownerId,
       level: "info",
       source: "stdout",
-      message: `Ready — served at ${previewUrl}`,
+      message: "Validation complete.",
     })
 
     await supabase

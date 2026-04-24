@@ -40,7 +40,7 @@ export default async function Home() {
             </h1>
             <p className="text-pretty mt-5 max-w-xl text-base leading-relaxed text-muted-foreground md:text-lg">
               UDD is a personal, web-based dev workspace. Draft an idea, scaffold a project, let AI
-              help you edit files, then run and ship — all from one calm surface.
+              help you edit files, then run the parser over the result — all from one calm surface.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Button asChild size="lg">
@@ -59,7 +59,7 @@ export default async function Home() {
             {[
               { icon: FolderGit2, label: "Projects", desc: "Organize every idea as a real repo." },
               { icon: Bot, label: "AI tasks", desc: "Scaffold, edit, refactor with guardrails." },
-              { icon: Play, label: "Runtime", desc: "Preview in a sandbox without leaving UDD." },
+              { icon: Play, label: "Runtime", desc: "Validate generated files with a real parser." },
               { icon: Terminal, label: "Logs", desc: "Readable build and runtime output." },
             ].map(({ icon: Icon, label, desc }) => (
               <div key={label} className="flex flex-col gap-2 bg-card p-5">

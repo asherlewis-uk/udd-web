@@ -7,6 +7,13 @@ import type {
   AITaskKind,
   AITaskResult,
 } from "@/lib/ai/types"
+import {
+  summarizeReport,
+  validateProject,
+  type ValidationFile,
+  type ValidationIssue,
+  type ValidationReport,
+} from "@/lib/validation"
 
 /** Maximum time allowed for a single AI generation call (5 minutes). */
 const GENERATION_TIMEOUT_MS = 5 * 60 * 1000
@@ -159,6 +166,34 @@ export async function runAITask(taskId: string): Promise<void> {
     if (!staged || staged.length === 0) {
       // Cancelled or otherwise terminalized between claim and stage.
       return
+    }
+
+    // ------------------------------------------------------------------
+    // Validation gate. Runs BEFORE persistFiles so invalid output never
+    // reaches project_files and never surfaces through the Files tab.
+    //
+    // Validation is a pure function of the merged file-set: existing
+    // project_files (for edit/refactor/etc) overlaid with the freshly
+    // generated files. For scaffold tasks the merge is a full replace,
+    // matching persistFiles's prune semantics.
+    //
+    // Blocking issues → throw (caught below, task ends 'failed' with the
+    // validation summary as `error` and per-issue events for the UI).
+    // Warnings/info → recorded as events, task still completes.
+    //
+    // No runtime / sandbox / execution is introduced. All signal comes
+    // from static analysis of the file contents.
+    // ------------------------------------------------------------------
+    const report = await validateGeneratedResult(
+      supabase,
+      projectId,
+      ownerId,
+      result,
+      kind,
+    )
+    await writeValidationEvents(writeEvent, report)
+    if (!report.ok) {
+      throw new Error(summarizeReport(report))
     }
 
     // Persist generated files into project_files. project_files is the
@@ -334,5 +369,100 @@ async function persistFiles(
         throw new Error(`Failed to prune stale project files: ${pruneError.message}`)
       }
     }
+  }
+}
+
+/** Cap on per-issue events emitted per task so the UI stays readable. */
+const MAX_VALIDATION_ISSUE_EVENTS = 50
+
+/**
+ * Build the merged file-set and run validateProject against it.
+ *
+ * For scaffold kind the merge is a full replace (scaffold semantically
+ * replaces the project layout — this matches persistFiles's prune step).
+ * For edit/refactor/explain/other the merge overlays freshly generated
+ * files on top of the pre-existing project_files so imports resolving to
+ * already-existing files don't get flagged as missing_import.
+ */
+async function validateGeneratedResult(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  projectId: string,
+  ownerId: string,
+  result: AITaskResult,
+  kind: AITaskKind,
+): Promise<ValidationReport> {
+  const generated: ValidationFile[] = result.files.map((f) => ({
+    path: f.path,
+    content: f.content,
+    language: f.language ?? null,
+  }))
+  const newPaths = new Set(generated.map((f) => f.path))
+
+  let merged: ValidationFile[]
+  if (kind === "scaffold") {
+    merged = generated
+  } else {
+    const { data: existing, error: existingError } = await supabase
+      .from("project_files")
+      .select("path, content, language")
+      .eq("project_id", projectId)
+      .eq("owner_id", ownerId)
+    if (existingError) {
+      throw new Error(`Failed to load project files for validation: ${existingError.message}`)
+    }
+    const overlay = new Map<string, ValidationFile>()
+    for (const row of existing ?? []) {
+      overlay.set(row.path as string, {
+        path: row.path as string,
+        content: (row.content as string) ?? "",
+        language: (row.language as string | null) ?? null,
+      })
+    }
+    for (const f of generated) overlay.set(f.path, f)
+    merged = Array.from(overlay.values())
+  }
+
+  return validateProject(merged, { newPaths })
+}
+
+async function writeValidationEvents(
+  writeEvent: (
+    kind: AITaskEventKind,
+    payload?: AITaskEventPayload,
+  ) => Promise<void>,
+  report: ValidationReport,
+): Promise<void> {
+  // One summary event so the UI always shows a clear top-line even when
+  // there are no individual issues.
+  await writeEvent("validation", {
+    step: "summary",
+    message: summarizeReport(report),
+    blocking_count: report.blockingCount,
+    warning_count: report.warningCount,
+    info_count: report.infoCount,
+  })
+
+  const toEmit = report.issues.slice(0, MAX_VALIDATION_ISSUE_EVENTS)
+  for (const issue of toEmit) {
+    await writeEvent("validation", issuePayload(issue))
+  }
+  if (report.issues.length > toEmit.length) {
+    await writeEvent("validation", {
+      step: "summary",
+      message: `… and ${report.issues.length - toEmit.length} more issue${
+        report.issues.length - toEmit.length === 1 ? "" : "s"
+      } not shown.`,
+    })
+  }
+}
+
+function issuePayload(issue: ValidationIssue): AITaskEventPayload {
+  return {
+    severity: issue.severity,
+    issue_kind: issue.kind,
+    file_path: issue.path,
+    line: issue.line,
+    message: issue.message,
+    suggestion: issue.suggestion,
   }
 }

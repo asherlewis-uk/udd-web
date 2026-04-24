@@ -82,7 +82,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
       <div className="flex items-start justify-between gap-4">
         <SectionHeading
           title="Run"
-          description="Boot a sandboxed runtime and watch the build stream in."
+          description="Validate the generated files with a real parser and watch per-file results stream in."
         />
         <div className="flex items-center gap-3 pt-1">
           <RunStatusBadge status={status} />
@@ -94,7 +94,6 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
         <div className="lg:col-span-3">
           <PreviewPanel
             status={status}
-            url={current?.preview_url ?? null}
             projectName={project.name as string}
           />
         </div>
@@ -104,7 +103,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
             emptyLabel={
               current
                 ? "Warming up..."
-                : "No run yet. Press Start Run to boot a sandbox."
+                : "No run yet. Press Start Run to validate the generated files."
             }
           />
         </div>

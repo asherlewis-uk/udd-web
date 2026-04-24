@@ -10,7 +10,7 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "UDD — Universal Dev Desktop",
   description:
-    "A personal, web-based desktop for turning ideas into working codebases. Projects, files, AI tasks, runs and exports in one calm workspace.",
+    "A personal, web-based desktop for turning ideas into working codebases. Projects, files, AI tasks, and runs in one calm workspace.",
   generator: "v0.app",
   applicationName: "UDD",
   icons: {

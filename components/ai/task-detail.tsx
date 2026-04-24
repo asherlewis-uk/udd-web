@@ -5,10 +5,13 @@ import {
   CircleAlert,
   CircleDot,
   ExternalLink,
+  Info,
   Loader2,
   Play,
   RefreshCw,
+  ShieldCheck,
   Trash2,
+  TriangleAlert,
   XCircle,
 } from "lucide-react"
 import { AIStatusBadge } from "@/components/ai/ai-status-badge"
@@ -88,7 +91,7 @@ function EventsBlock({ events }: { events: EventLike[] }) {
         <ol className="flex flex-col gap-2">
           {events.map((e) => (
             <li key={e.id} className="flex items-start gap-2.5 text-xs">
-              <EventIcon kind={e.kind} />
+              <EventIcon kind={e.kind} severity={e.payload.severity} />
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="font-mono uppercase tracking-wider text-foreground">
@@ -106,12 +109,31 @@ function EventsBlock({ events }: { events: EventLike[] }) {
   )
 }
 
-function EventIcon({ kind }: { kind: AITaskEventRow["kind"] }) {
+function EventIcon({
+  kind,
+  severity,
+}: {
+  kind: AITaskEventRow["kind"]
+  severity?: AITaskEventRow["payload"]["severity"]
+}) {
   const base = "mt-0.5 h-3.5 w-3.5 flex-none"
   if (kind === "started") return <CircleDot className={cn(base, "text-muted-foreground")} />
   if (kind === "progress") return <Loader2 className={cn(base, "text-accent")} />
   if (kind === "completed") return <CheckCircle2 className={cn(base, "text-accent")} />
   if (kind === "failed") return <CircleAlert className={cn(base, "text-destructive")} />
+  if (kind === "validation") {
+    if (severity === "blocking") {
+      return <CircleAlert className={cn(base, "text-destructive")} />
+    }
+    if (severity === "warning") {
+      return <TriangleAlert className={cn(base, "text-foreground/70")} />
+    }
+    if (severity === "info") {
+      return <Info className={cn(base, "text-muted-foreground")} />
+    }
+    // Summary event (no severity) — signal the whole layer.
+    return <ShieldCheck className={cn(base, "text-accent")} />
+  }
   return <Circle className={cn(base, "text-muted-foreground")} />
 }
 
@@ -122,6 +144,9 @@ function EventPayload({
   kind: AITaskEventRow["kind"]
   payload: AITaskEventRow["payload"]
 }) {
+  if (kind === "validation") {
+    return <ValidationEventBody payload={payload} />
+  }
   const parts: string[] = []
   if (payload.step) parts.push(payload.step)
   if (payload.message) parts.push(payload.message)
@@ -129,6 +154,64 @@ function EventPayload({
   if (kind === "failed" && payload.error) parts.push(payload.error)
   if (parts.length === 0) return null
   return <span className="text-muted-foreground">{parts.join(" — ")}</span>
+}
+
+function ValidationEventBody({
+  payload,
+}: {
+  payload: AITaskEventRow["payload"]
+}) {
+  const isSummary = payload.step === "summary" && !payload.severity
+  if (isSummary) {
+    const counts: string[] = []
+    if (payload.blocking_count) counts.push(`${payload.blocking_count} blocking`)
+    if (payload.warning_count) counts.push(`${payload.warning_count} warning`)
+    if (payload.info_count) counts.push(`${payload.info_count} info`)
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-foreground">{payload.message ?? "Validation"}</span>
+        {counts.length > 0 ? (
+          <span className="text-muted-foreground">{counts.join(" · ")}</span>
+        ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        {payload.severity ? (
+          <span
+            className={cn(
+              "font-mono text-[10px] uppercase tracking-wider",
+              payload.severity === "blocking" && "text-destructive",
+              payload.severity === "warning" && "text-foreground/70",
+              payload.severity === "info" && "text-muted-foreground",
+            )}
+          >
+            {payload.severity}
+          </span>
+        ) : null}
+        {payload.issue_kind ? (
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {payload.issue_kind}
+          </span>
+        ) : null}
+        {payload.file_path ? (
+          <span className="truncate font-mono text-[11px] text-muted-foreground">
+            {payload.file_path}
+            {payload.line ? `:${payload.line}` : ""}
+          </span>
+        ) : null}
+      </div>
+      {payload.message ? (
+        <span className="text-foreground">{payload.message}</span>
+      ) : null}
+      {payload.suggestion ? (
+        <span className="text-muted-foreground">Suggestion: {payload.suggestion}</span>
+      ) : null}
+    </div>
+  )
 }
 
 function ResultBlock({ task }: { task: AITaskRow }) {
