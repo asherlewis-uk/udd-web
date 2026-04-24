@@ -88,16 +88,51 @@ export async function startRunFromTaskAction(formData: FormData): Promise<void> 
   }
 
   if (!sessionId) {
-    sessionId = await startRun(projectId)
-    await supabase
+    // Create a session first so we have an id to link…
+    const newSessionId = await startRun(projectId)
+
+    // …then claim the link slot atomically. Guarding on
+    // `run_session_id IS NULL` means only the first concurrent submit
+    // wins; any later submit that raced past the earlier `task.run_session_id`
+    // read will get zero affected rows here.
+    const { data: claimed, error: claimError } = await supabase
       .from("ai_tasks")
-      .update({ run_session_id: sessionId })
+      .update({ run_session_id: newSessionId })
       .eq("id", taskId)
       .eq("owner_id", user.id)
+      .is("run_session_id", null)
+      .select("id")
 
-    after(async () => {
-      await driveSession(sessionId!)
-    })
+    if (!claimError && claimed && claimed.length > 0) {
+      // Won the race — drive the session we just created.
+      sessionId = newSessionId
+      after(async () => {
+        await driveSession(newSessionId)
+      })
+    } else {
+      // Lost the race (or the update errored). Our freshly-created session
+      // is an orphan — delete it so there's no ghost session in the Run
+      // tab history. `run_events.session_id` cascades, so the initial
+      // "Run started." event is cleaned up automatically.
+      await supabase
+        .from("run_sessions")
+        .delete()
+        .eq("id", newSessionId)
+        .eq("owner_id", user.id)
+
+      // Re-read the winner's link so we redirect to the correct run.
+      const { data: refreshed } = await supabase
+        .from("ai_tasks")
+        .select("run_session_id")
+        .eq("id", taskId)
+        .eq("owner_id", user.id)
+        .single()
+      sessionId = (refreshed?.run_session_id as string | null) ?? null
+      // If the winner's session already terminalized between their claim
+      // and our re-read, sessionId stays null. We still redirect to the
+      // Run tab; the user can click "Run this result" again and will hit
+      // the normal "no live linked session" path next render.
+    }
   }
 
   revalidatePath(`/projects/${projectId}/ai`)
