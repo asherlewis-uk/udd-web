@@ -12,7 +12,14 @@ import type {
  *
  * Backed by a real AI provider (see lib/ai/generator.ts + lib/ai/providers).
  * This function owns every side-effect: status transitions, event writes,
- * output persistence, and mirroring generated files into project_files.
+ * output staging, and persisting generated files into project_files.
+ *
+ * project_files is the source of truth for the Files tab and runtime
+ * validation. If file persistence fails, the task is marked 'failed' — it
+ * is never 'completed' without successfully persisted files. The raw
+ * generator output is staged onto ai_tasks.output before persistence so it
+ * remains available for diagnostics/recovery on failed tasks.
+ *
  * Swapping provider only means changing UDD_AI_PROVIDER — no code changes here.
  */
 export async function runAITask(taskId: string): Promise<void> {
@@ -108,16 +115,35 @@ export async function runAITask(taskId: string): Promise<void> {
       },
     )
 
-    // running → completed (+ output). Gate on status=running so a concurrent
-    // cancel/fail can't be silently overwritten. If this write fails, surface
-    // it via the catch so the task ends up 'failed' with a real message
-    // instead of being stuck in 'running' while the event log says
-    // 'completed'.
+    // Stage the generator output onto the task row while status is still
+    // 'running'. This preserves the raw model output for diagnostics and
+    // recovery even if the subsequent persist step fails and the task
+    // ultimately ends up 'failed'. Gated on status=running so a concurrent
+    // cancel/fail can't be silently overwritten.
+    const { error: stageError } = await supabase
+      .from("ai_tasks")
+      .update({ output: result })
+      .eq("id", taskId)
+      .eq("owner_id", ownerId)
+      .eq("status", "running")
+    if (stageError) {
+      throw new Error(`Failed to stage task output: ${stageError.message}`)
+    }
+
+    // Persist generated files into project_files. project_files is the
+    // source of truth used by the Files tab and runtime validation, so a
+    // failure here MUST fail the task — persistFiles throws on upsert error
+    // and the catch below will mark status='failed'. The staged
+    // ai_tasks.output above remains available for diagnostics/recovery.
+    await persistFiles(supabase, projectId, ownerId, result)
+
+    // running → completed. Only reachable after files have been persisted,
+    // so 'completed' now implies the Files tab and runtime have real data.
+    // Gated on status=running for the same concurrency reason as above.
     const { error: completeError } = await supabase
       .from("ai_tasks")
       .update({
         status: "completed",
-        output: result,
         finished_at: new Date().toISOString(),
         error: null,
       })
@@ -125,14 +151,8 @@ export async function runAITask(taskId: string): Promise<void> {
       .eq("owner_id", ownerId)
       .eq("status", "running")
     if (completeError) {
-      throw new Error(`Failed to persist task output: ${completeError.message}`)
+      throw new Error(`Failed to finalize task: ${completeError.message}`)
     }
-
-    // Persist generated files into project_files so the runtime executor has
-    // a stable source of truth (upsert by path). Errors here are non-fatal:
-    // ai_tasks.output remains the durable record, and the executor falls
-    // back to it when project_files is empty.
-    await persistFiles(supabase, projectId, ownerId, result)
 
     await writeEvent("completed", {
       summary: result.summary,
@@ -184,7 +204,9 @@ async function persistFiles(
     .upsert(rows, { onConflict: "project_id,path" })
 
   if (error) {
-    // Don't fail the whole task — the output is already persisted on ai_tasks.
-    console.log("[v0] persistFiles: upsert failed", { error: error.message })
+    // project_files is the source of truth for the Files tab and runtime
+    // validation. A persist failure must fail the whole task — propagate so
+    // runAITask's catch marks status='failed' with a real error message.
+    throw new Error(`Failed to persist project files: ${error.message}`)
   }
 }
