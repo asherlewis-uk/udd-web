@@ -12,6 +12,7 @@ import { TaskList } from "@/components/ai/task-list"
 import { TaskDetail } from "@/components/ai/task-detail"
 import { TaskPoller } from "@/components/ai/task-poller"
 import { createClient } from "@/lib/supabase/server"
+import { reapStaleTasks } from "@/lib/ai/service"
 import type { AITaskEventRow, AITaskListItem, AITaskRow } from "@/lib/ai/types"
 
 export default async function AiPage({
@@ -24,6 +25,17 @@ export default async function AiPage({
   const { id } = await params
   const { task: requestedTaskId } = await searchParams
   const supabase = await createClient()
+
+  // Get user for reaper call (RLS also uses this, but we need owner_id explicitly)
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  // Opportunistically mark any long-stalled tasks as failed before loading
+  // the list. This keeps the UI honest without requiring a background job.
+  if (user) {
+    await reapStaleTasks(id, user.id)
+  }
 
   const { data: tasksData } = await supabase
     .from("ai_tasks")

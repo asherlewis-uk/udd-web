@@ -7,6 +7,7 @@ import { LogStream } from "@/components/run/log-stream"
 import { PreviewPanel } from "@/components/run/preview-panel"
 import { SessionsHistory } from "@/components/run/sessions-history"
 import { createClient } from "@/lib/supabase/server"
+import { reapStaleSessions } from "@/lib/runtime/service"
 import type { RunStatus } from "@/lib/types"
 
 export default async function RunPage({ params }: { params: Promise<{ id: string }> }) {
@@ -19,6 +20,17 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
     .eq("id", id)
     .maybeSingle()
   if (!project) notFound()
+
+  // Get user for reaper call
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  // Opportunistically mark any long-stalled sessions as error before loading
+  // the list. This keeps the UI honest without requiring a background job.
+  if (user) {
+    await reapStaleSessions(id, user.id)
+  }
 
   const { data: sessionsData } = await supabase
     .from("run_sessions")

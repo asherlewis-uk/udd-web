@@ -283,6 +283,37 @@ export async function driveSession(sessionId: string): Promise<void> {
   }
 }
 
+/** Stale threshold in milliseconds (10 minutes). */
+const STALE_SESSION_MS = 10 * 60 * 1000
+
+/**
+ * Opportunistic reaper: marks sessions stuck in starting/running as error if
+ * they've been in that state longer than STALE_SESSION_MS. Called on Run tab
+ * load so stale work gets cleaned up when the user visits — no cron needed.
+ */
+export async function reapStaleSessions(
+  projectId: string,
+  ownerId: string,
+): Promise<number> {
+  const supabase = await createClient()
+  const cutoff = new Date(Date.now() - STALE_SESSION_MS).toISOString()
+
+  const { data } = await supabase
+    .from("run_sessions")
+    .update({
+      status: "error",
+      error: "Session stalled — marked failed after timeout.",
+      stopped_at: new Date().toISOString(),
+    })
+    .eq("project_id", projectId)
+    .eq("owner_id", ownerId)
+    .in("status", ["starting", "running"])
+    .lt("started_at", cutoff)
+    .select("id")
+
+  return data?.length ?? 0
+}
+
 type EventInput = {
   session_id: string
   project_id: string

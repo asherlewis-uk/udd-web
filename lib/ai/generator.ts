@@ -40,17 +40,23 @@ export type StreamHooks = {
   }) => Promise<void> | void
 }
 
+export type GenerateOptions = {
+  hooks?: StreamHooks
+  /** AbortSignal to cancel the stream (e.g. timeout or user cancel). */
+  abortSignal?: AbortSignal
+}
+
 /**
  * Real AI-backed generator. Preserves the AITaskResult shape exactly so the
  * rest of the system (service, UI, runtime executor) doesn't need to change.
  */
 export async function generateResult(
   ctx: PromptContext,
-  hooks?: StreamHooks,
+  options?: GenerateOptions,
 ): Promise<AITaskResult> {
   const provider = getActiveProvider()
-  if (hooks?.onStart) {
-    await hooks.onStart({ provider })
+  if (options?.hooks?.onStart) {
+    await options.hooks.onStart({ provider })
   }
 
   const result = streamText({
@@ -59,6 +65,7 @@ export async function generateResult(
     prompt: buildUserPrompt(ctx),
     maxOutputTokens: 4000,
     output: Output.object({ schema: ResultSchema }),
+    abortSignal: options?.abortSignal,
   })
 
   let lastSummaryChars = 0
@@ -83,8 +90,8 @@ export async function generateResult(
       lastSummaryChars = summaryChars
       lastFileCount = fileCount
       lastFilePath = latestPath
-      if (hooks?.onPartial) {
-        await hooks.onPartial({
+      if (options?.hooks?.onPartial) {
+        await options.hooks.onPartial({
           summaryChars,
           fileCount,
           latestFilePath: latestPath,

@@ -7,6 +7,9 @@ import type {
   AITaskResult,
 } from "@/lib/ai/types"
 
+/** Maximum time allowed for a single AI generation call (5 minutes). */
+const GENERATION_TIMEOUT_MS = 5 * 60 * 1000
+
 /**
  * The only entry point for executing an AI task.
  *
@@ -89,31 +92,45 @@ export async function runAITask(taskId: string): Promise<void> {
     }
     await writeEvent("started", { message: "Task picked up" })
 
-    // Real streaming generation. Hooks emit progress events as the object grows.
-    const result: AITaskResult = await generateResult(
-      { prompt, kind, projectName, idea, description },
-      {
-        onStart: async ({ provider }) => {
-          await writeEvent("progress", {
-            step: "calling_model",
-            message: `Calling ${provider.label} (${provider.model})`,
-          })
+    // Create an AbortController with a timeout so a hung stream doesn't
+    // orphan the task in 'running' forever. The reaper catches anything
+    // that slips past, but this provides a faster, cleaner failure path.
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS)
+
+    let result: AITaskResult
+    try {
+      // Real streaming generation. Hooks emit progress events as the object grows.
+      result = await generateResult(
+        { prompt, kind, projectName, idea, description },
+        {
+          abortSignal: controller.signal,
+          hooks: {
+            onStart: async ({ provider }) => {
+              await writeEvent("progress", {
+                step: "calling_model",
+                message: `Calling ${provider.label} (${provider.model})`,
+              })
+            },
+            onPartial: async ({ summaryChars, fileCount, latestFilePath }) => {
+              const message =
+                fileCount === 0
+                  ? `Streaming response... (${summaryChars} chars)`
+                  : latestFilePath
+                    ? `Generating ${latestFilePath} (file ${fileCount})`
+                    : `Generating file ${fileCount}`
+              await writeEvent("progress", {
+                step: "streaming",
+                message,
+                file_count: fileCount,
+              })
+            },
+          },
         },
-        onPartial: async ({ summaryChars, fileCount, latestFilePath }) => {
-          const message =
-            fileCount === 0
-              ? `Streaming response... (${summaryChars} chars)`
-              : latestFilePath
-                ? `Generating ${latestFilePath} (file ${fileCount})`
-                : `Generating file ${fileCount}`
-          await writeEvent("progress", {
-            step: "streaming",
-            message,
-            file_count: fileCount,
-          })
-        },
-      },
-    )
+      )
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     // Stage the generator output onto the task row while status is still
     // 'running'. This preserves the raw model output for diagnostics and
@@ -178,6 +195,40 @@ export async function runAITask(taskId: string): Promise<void> {
       .eq("owner_id", ownerId)
     await writeEvent("failed", { error: message })
   }
+}
+
+/** Stale threshold in milliseconds (10 minutes). */
+const STALE_TASK_MS = 10 * 60 * 1000
+
+/**
+ * Opportunistic reaper: marks tasks stuck in pending/running as failed if
+ * they've been in that state longer than STALE_TASK_MS. Called on AI tab load
+ * so stale work gets cleaned up when the user visits — no cron needed.
+ */
+export async function reapStaleTasks(
+  projectId: string,
+  ownerId: string,
+): Promise<number> {
+  const supabase = await createClient()
+  const cutoff = new Date(Date.now() - STALE_TASK_MS).toISOString()
+
+  // Conditional update: only flip tasks that are still pending/running and
+  // whose started_at (or created_at for never-started tasks) is older than
+  // the cutoff. Returns affected rows so caller can log if needed.
+  const { data } = await supabase
+    .from("ai_tasks")
+    .update({
+      status: "failed",
+      error: "Task stalled — marked failed after timeout.",
+      finished_at: new Date().toISOString(),
+    })
+    .eq("project_id", projectId)
+    .eq("owner_id", ownerId)
+    .in("status", ["pending", "running"])
+    .or(`started_at.lt.${cutoff},started_at.is.null,created_at.lt.${cutoff}`)
+    .select("id")
+
+  return data?.length ?? 0
 }
 
 async function persistFiles(
