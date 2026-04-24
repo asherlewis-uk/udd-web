@@ -235,9 +235,11 @@ export async function reapStaleTasks(
   const supabase = await createClient()
   const cutoff = new Date(Date.now() - STALE_TASK_MS).toISOString()
 
-  // Conditional update: only flip tasks that are still pending/running and
-  // whose started_at (or created_at for never-started tasks) is older than
-  // the cutoff. Returns affected rows so caller can log if needed.
+  // Correlate each status with the right age column:
+  //   pending → age measured from created_at (started_at is always NULL here)
+  //   running → age measured from started_at (set by the driver on claim)
+  // Supabase's `.or()` with nested `and(...)` groups expresses this as a
+  // single statement so the whole reap runs in one round trip.
   const { data } = await supabase
     .from("ai_tasks")
     .update({
@@ -247,8 +249,9 @@ export async function reapStaleTasks(
     })
     .eq("project_id", projectId)
     .eq("owner_id", ownerId)
-    .in("status", ["pending", "running"])
-    .or(`started_at.lt.${cutoff},started_at.is.null,created_at.lt.${cutoff}`)
+    .or(
+      `and(status.eq.pending,created_at.lt.${cutoff}),and(status.eq.running,started_at.lt.${cutoff})`,
+    )
     .select("id")
 
   return data?.length ?? 0
