@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { generateResult } from "@/lib/ai/generator"
+import { getActiveProviderForOwner } from "@/lib/ai/providers/server"
 import type {
   AITaskEventKind,
   AITaskEventPayload,
@@ -92,6 +93,11 @@ export async function runAITask(taskId: string): Promise<void> {
     }
     await writeEvent("started", { message: "Task picked up" })
 
+    // Resolve provider from per-user saved default (if any), falling back
+    // to the env-based default. This wires getActiveProviderForOwner into
+    // the generation path so saveAIProviderConfig has an effect.
+    const provider = await getActiveProviderForOwner(ownerId, supabase)
+
     // Create an AbortController with a timeout so a hung stream doesn't
     // orphan the task in 'running' forever. The reaper catches anything
     // that slips past, but this provides a faster, cleaner failure path.
@@ -104,6 +110,7 @@ export async function runAITask(taskId: string): Promise<void> {
       result = await generateResult(
         { prompt, kind, projectName, idea, description },
         {
+          provider,
           abortSignal: controller.signal,
           hooks: {
             onStart: async ({ provider }) => {

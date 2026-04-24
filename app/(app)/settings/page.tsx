@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation"
 import { AccountForm } from "@/components/settings/account-form"
+import { ProviderForm } from "@/components/settings/provider-form"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/server"
+import { isProviderId, type ProviderId } from "@/lib/ai/providers"
 import { LogOut } from "lucide-react"
 
 export const metadata = {

@@ -44,6 +44,8 @@ export type GenerateOptions = {
   hooks?: StreamHooks
   /** AbortSignal to cancel the stream (e.g. timeout or user cancel). */
   abortSignal?: AbortSignal
+  /** Override the provider (e.g. from per-user saved default). */
+  provider?: ProviderConfig
 }
 
 /**
@@ -54,7 +56,8 @@ export async function generateResult(
   ctx: PromptContext,
   options?: GenerateOptions,
 ): Promise<AITaskResult> {
-  const provider = getActiveProvider()
+  // Use provided override (e.g. per-user saved default) or fall back to env.
+  const provider = options?.provider ?? getActiveProvider()
   if (options?.hooks?.onStart) {
     await options.hooks.onStart({ provider })
   }
