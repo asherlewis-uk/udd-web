@@ -44,7 +44,8 @@ export default async function LogsPage({ params }: { params: Promise<{ id: strin
             </EmptyMedia>
             <EmptyTitle>No logs yet</EmptyTitle>
             <EmptyDescription>
-              Logs appear here as soon as you start a run. The runtime adapter is stubbed for now.
+              Logs appear here as soon as you start a run. The runtime validates your generated
+              files and reports build output in real time.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

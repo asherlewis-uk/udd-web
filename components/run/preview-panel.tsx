@@ -60,7 +60,7 @@ export function PreviewPanel({
                   served at {url}
                 </div>
                 <div className="mt-3 text-xs text-muted-foreground">
-                  Live preview iframe lands here when the runtime is real.
+                  Live sandbox preview coming soon.
                 </div>
               </div>
             </>

@@ -94,8 +94,8 @@ export default async function AiPage({
             </EmptyMedia>
             <EmptyTitle>No AI tasks yet</EmptyTitle>
             <EmptyDescription>
-              Your task list will populate here as soon as you submit a prompt. Results are
-              currently produced by a deterministic local simulator.
+              Your task list will populate here as soon as you submit a prompt. Tasks are
+              processed by a real AI model and results are persisted to your project.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
