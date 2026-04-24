@@ -17,6 +17,33 @@ async function getUser() {
 }
 
 /**
+ * Hard cap on simultaneously-live AI tasks per user. Both initial creation
+ * and retry-from-failed go through this. The reaper in lib/ai/service
+ * terminalizes stalled work after 10 minutes, so this limit is
+ * self-healing — a dead task will be cleared by the next visit to the AI
+ * tab and the user will regain a slot without operator intervention.
+ */
+const MAX_LIVE_TASKS_PER_USER = 3
+
+async function enforceConcurrencyLimit(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ownerId: string,
+): Promise<void> {
+  const { count, error } = await supabase
+    .from("ai_tasks")
+    .select("id", { count: "exact", head: true })
+    .eq("owner_id", ownerId)
+    .in("status", ["pending", "running"])
+
+  if (error) throw new Error(error.message)
+  if ((count ?? 0) >= MAX_LIVE_TASKS_PER_USER) {
+    throw new Error(
+      `You already have ${count} AI tasks in flight. Wait for them to finish (or cancel one) before starting another.`,
+    )
+  }
+}
+
+/**
  * Create a prompt + an ai_task in 'pending' state, then schedule background
  * processing via `after()`. Returns by redirecting to the AI tab focused on
  * the new task.
@@ -29,6 +56,10 @@ export async function createAITask(formData: FormData) {
   if (prompt.length > 4000) throw new Error("Prompt is too long (max 4000 chars)")
 
   const { supabase, user } = await getUser()
+
+  // 0. Rate-limit: reject if the user has too many live tasks. Runs first
+  //    so we don't create a prompt row we'll never process.
+  await enforceConcurrencyLimit(supabase, user.id)
 
   // 1. Persist the prompt.
   const { data: promptRow, error: promptError } = await supabase
@@ -161,6 +192,10 @@ export async function retryFailedTask(formData: FormData) {
   if (!taskId || !projectId) throw new Error("Missing task id or project id")
 
   const { supabase, user } = await getUser()
+
+  // Rate-limit retries for the same reason as creation — a user with many
+  // failed tasks could otherwise queue them all at once.
+  await enforceConcurrencyLimit(supabase, user.id)
 
   const { data: original } = await supabase
     .from("ai_tasks")

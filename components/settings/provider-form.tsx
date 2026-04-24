@@ -23,9 +23,16 @@ export function ProviderForm({
 }: {
   currentProviderId: ProviderId | null
 }) {
-  const [selected, setSelected] = useState<ProviderId>(currentProviderId ?? "openai")
+  // When nothing is saved, the Select visually shows "openai" but there is
+  // no row in provider_configs yet. We track the baseline as-selected in
+  // the UI so the Save button is only enabled on a real change.
+  const initial: ProviderId = currentProviderId ?? "openai"
+  const [selected, setSelected] = useState<ProviderId>(initial)
+  const [baseline, setBaseline] = useState<ProviderId>(initial)
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState<string | null>(null)
+
+  const isDirty = selected !== baseline
 
   const handleSave = () => {
     setMessage(null)
@@ -35,6 +42,9 @@ export function ProviderForm({
           providerId: selected,
           setAsDefault: true,
         })
+        // Move the baseline so Save greys out until the user changes
+        // selection again.
+        setBaseline(selected)
         setMessage("Provider preference saved.")
       } catch (err) {
         setMessage(err instanceof Error ? err.message : "Failed to save.")
@@ -68,7 +78,7 @@ export function ProviderForm({
         </p>
       </div>
       <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={isPending} size="sm">
+        <Button onClick={handleSave} disabled={isPending || !isDirty} size="sm">
           {isPending ? "Saving..." : "Save"}
         </Button>
         {message && (

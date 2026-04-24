@@ -166,7 +166,10 @@ export async function runAITask(taskId: string): Promise<void> {
     // failure here MUST fail the task — persistFiles throws on upsert error
     // and the catch below will mark status='failed'. The staged
     // ai_tasks.output above remains available for diagnostics/recovery.
-    await persistFiles(supabase, projectId, ownerId, result)
+    //
+    // `kind` drives prune semantics: scaffold replaces the file set
+    // entirely; edit/refactor/explain/other are additive.
+    await persistFiles(supabase, projectId, ownerId, result, kind)
 
     // running → completed. Only reachable after files have been persisted,
     // so 'completed' now implies the Files tab and runtime have real data.
@@ -262,6 +265,7 @@ async function persistFiles(
   projectId: string,
   ownerId: string,
   result: AITaskResult,
+  kind: AITaskKind,
 ): Promise<void> {
   if (!result.files.length) return
 
@@ -275,15 +279,60 @@ async function persistFiles(
     updated_at: new Date().toISOString(),
   }))
 
-  // Upsert so repeated tasks overwrite prior output for the same paths.
-  const { error } = await supabase
+  // 1. Upsert first so the new file set is fully present before we prune.
+  //    There is no moment where a scaffold leaves the Files tab empty —
+  //    a concurrent reader during the prune will see the new files plus
+  //    any about-to-be-pruned stale paths, never less than the new set.
+  const { error: upsertError } = await supabase
     .from("project_files")
     .upsert(rows, { onConflict: "project_id,path" })
 
-  if (error) {
+  if (upsertError) {
     // project_files is the source of truth for the Files tab and runtime
     // validation. A persist failure must fail the whole task — propagate so
     // runAITask's catch marks status='failed' with a real error message.
-    throw new Error(`Failed to persist project files: ${error.message}`)
+    throw new Error(`Failed to persist project files: ${upsertError.message}`)
+  }
+
+  // 2. For scaffold kind, remove stale paths that weren't in the new set.
+  //    Scaffold semantically replaces the project layout; edit/refactor/
+  //    explain/other are additive and keep prior files untouched.
+  //
+  //    We use a two-step fetch-then-delete rather than a PostgREST NOT IN
+  //    filter: file paths can legitimately contain commas, parentheses,
+  //    or quotes, which would break the `(v1,v2,v3)` grammar used by the
+  //    PostgREST `not.in` operator. The explicit .in() delete below takes
+  //    an array and handles escaping for us.
+  if (kind === "scaffold") {
+    const keepPaths = new Set(rows.map((r) => r.path))
+
+    const { data: existing, error: selectError } = await supabase
+      .from("project_files")
+      .select("path")
+      .eq("project_id", projectId)
+      .eq("owner_id", ownerId)
+    if (selectError) {
+      throw new Error(`Failed to read project files for prune: ${selectError.message}`)
+    }
+
+    const stale = (existing ?? [])
+      .map((r) => r.path as string)
+      .filter((p) => !keepPaths.has(p))
+
+    if (stale.length > 0) {
+      const { error: pruneError } = await supabase
+        .from("project_files")
+        .delete()
+        .eq("project_id", projectId)
+        .eq("owner_id", ownerId)
+        .in("path", stale)
+
+      if (pruneError) {
+        // Prune failure is fatal: a scaffold that didn't prune leaves
+        // the Files tab in a mixed state (new + stale) which violates
+        // the scaffold contract.
+        throw new Error(`Failed to prune stale project files: ${pruneError.message}`)
+      }
+    }
   }
 }

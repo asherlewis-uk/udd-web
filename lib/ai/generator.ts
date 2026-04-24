@@ -1,8 +1,19 @@
 import { streamText, Output } from "ai"
 import * as z from "zod"
-import type { AITaskResult } from "@/lib/ai/types"
+import type { AITaskKind, AITaskResult } from "@/lib/ai/types"
 import { getActiveProvider, type ProviderConfig } from "@/lib/ai/providers"
 import { buildSystemPrompt, buildUserPrompt, type PromptContext } from "@/lib/ai/prompts"
+
+/**
+ * Derive the per-call output token cap from the task kind. Scaffold tasks
+ * routinely emit 3-6 files of real content and hit the ceiling at 4000,
+ * producing truncated objects that then fail Zod validation. Other kinds
+ * (edit/refactor/explain/other) are typically 1-3 focused files and stay
+ * well under the default ceiling.
+ */
+function maxOutputTokensFor(kind: AITaskKind): number {
+  return kind === "scaffold" ? 8000 : 4000
+}
 
 /**
  * Schema the model must conform to. All fields are required (no optional()) so
@@ -66,7 +77,7 @@ export async function generateResult(
     model: provider.model,
     system: buildSystemPrompt(ctx),
     prompt: buildUserPrompt(ctx),
-    maxOutputTokens: 4000,
+    maxOutputTokens: maxOutputTokensFor(ctx.kind),
     output: Output.object({ schema: ResultSchema }),
     abortSignal: options?.abortSignal,
   })
