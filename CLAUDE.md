@@ -2,6 +2,48 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Product Truth Contract (Non-Negotiable)
+
+This system must never misrepresent its behavior to the user.
+
+The following invariants must always hold. Any change that violates them is invalid.
+
+### 1. Execution Truth
+- The system must not claim to run, build, serve, or deploy code unless real execution infrastructure exists and is used.
+- If only validation/parsing is performed, all user-facing language must reflect validation, not execution.
+
+### 2. Preview Truth
+- The system must not display or imply a live preview unless a real running instance exists.
+- Synthetic URLs (e.g. preview.local) must never be shown as if they are real endpoints.
+
+### 3. Completion Truth
+- No task may be marked "completed" unless all durable side effects required for user-visible state are successfully persisted.
+- Partial success must be surfaced as failure, not success.
+
+### 4. Provider Truth
+- The system must not imply that user-provided API keys are stored or used unless secure storage is implemented.
+- Provider selection may be saved, but credentials must be described accurately as environment-managed if that is the case.
+
+### 5. UI Copy Truth
+- All UI copy must accurately describe the current behavior of the system.
+- Any stale or simulated language must be removed immediately when behavior becomes real.
+- Any real behavior must not be described as simulated.
+
+### 6. No Silent Deception
+- The system must not fabricate success states, URLs, logs, or outputs that imply functionality that does not exist.
+- Logs and events must reflect actual operations performed.
+
+### 7. Regression Rule
+- If a change reintroduces previously removed misleading behavior, it must be treated as a bug and corrected immediately.
+
+### Enforcement
+Before completing any task:
+- Verify that no code, UI, or logs violate the above invariants.
+- If a violation is detected, fix it before proceeding.
+- Do not defer truth fixes to later passes.
+
+This contract overrides all scoped task instructions.
+
 ## Project
 
 UDD ("Universal Dev Desktop") is a single-user Next.js app that turns ideas into working codebases. A user drafts a project, runs AI tasks against it, and executes those generated files in a lightweight runtime that validates them with a real parser.
