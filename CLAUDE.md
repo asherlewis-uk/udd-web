@@ -8,14 +8,15 @@ UDD ("Universal Dev Desktop") is a single-user Next.js app that turns ideas into
 
 ## Commands
 
-- `npm run dev` — start dev server (Next.js 16)
-- `npm run build` — production build
-- `npm run start` — run the built app
-- `npm run lint` — eslint
+- `pnpm dev` — start dev server (Next.js 16)
+- `pnpm build` — production build
+- `pnpm start` — run the built app
+- `pnpm lint` — eslint
+- `pnpm typecheck` — `tsc --noEmit` (standalone type verification)
 
-There are no tests in this repo. `next.config.mjs` sets `typescript.ignoreBuildErrors: true`, so `next build` will not surface type errors — use the TS language server in the editor or `tsc --noEmit` when you need type verification.
+There are no tests in this repo. `next.config.mjs` has `typescript.ignoreBuildErrors: false`, so `next build` will fail on real type errors; `pnpm typecheck` is available for standalone verification without building.
 
-Both `pnpm-lock.yaml` and `package-lock.json` exist; the scripts assume npm. If you touch dependencies, update whichever lockfile is actually in use in your environment rather than regenerating both.
+`pnpm-lock.yaml` is the canonical lockfile. Do not add a `package-lock.json` back — dual lockfiles cause Vercel build drift.
 
 ## Stack essentials
 
