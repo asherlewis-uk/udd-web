@@ -14,28 +14,31 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
   const { id } = await params
   const supabase = await createClient()
 
+  // Resolve user up-front so every query can belt-and-braces the RLS check
+  // with an explicit owner filter. The (app) layout already redirects
+  // unauthenticated users, so notFound() here is purely defensive.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) notFound()
+
   const { data: project } = await supabase
     .from("projects")
     .select("id, name")
     .eq("id", id)
+    .eq("owner_id", user.id)
     .maybeSingle()
   if (!project) notFound()
 
-  // Get user for reaper call
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
   // Opportunistically mark any long-stalled sessions as error before loading
   // the list. This keeps the UI honest without requiring a background job.
-  if (user) {
-    await reapStaleSessions(id, user.id)
-  }
+  await reapStaleSessions(id, user.id)
 
   const { data: sessionsData } = await supabase
     .from("run_sessions")
     .select("id, status, preview_url, started_at, stopped_at, created_at")
     .eq("project_id", id)
+    .eq("owner_id", user.id)
     .order("created_at", { ascending: false })
     .limit(20)
 
@@ -58,6 +61,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
         .from("run_events")
         .select("id, level, source, message, created_at")
         .eq("session_id", current.id)
+        .eq("owner_id", user.id)
         .order("created_at", { ascending: true })
         .limit(300)
     : { data: [] as never[] }

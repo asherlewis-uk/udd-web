@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation"
 import { Terminal } from "lucide-react"
 import {
   Empty,
@@ -20,10 +21,20 @@ const LEVEL_TONE: Record<string, string> = {
 export default async function LogsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
+
+  // Resolve user up-front so the query can belt-and-braces the RLS check
+  // with an explicit owner filter. The (app) layout already redirects
+  // unauthenticated users, so notFound() here is purely defensive.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  if (!user) notFound()
+
   const { data } = await supabase
     .from("run_events")
     .select("id, level, source, message, created_at")
     .eq("project_id", id)
+    .eq("owner_id", user.id)
     .order("created_at", { ascending: false })
     .limit(200)
 

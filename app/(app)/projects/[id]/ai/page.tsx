@@ -1,3 +1,4 @@
+import { notFound } from "next/navigation"
 import { Bot } from "lucide-react"
 import {
   Empty,
@@ -26,21 +27,23 @@ export default async function AiPage({
   const { task: requestedTaskId } = await searchParams
   const supabase = await createClient()
 
-  // Get user for reaper call (RLS also uses this, but we need owner_id explicitly)
+  // Resolve user up-front so every query can belt-and-braces the RLS check
+  // with an explicit owner filter. The (app) layout already redirects
+  // unauthenticated users, so notFound() here is purely defensive.
   const {
     data: { user },
   } = await supabase.auth.getUser()
+  if (!user) notFound()
 
   // Opportunistically mark any long-stalled tasks as failed before loading
   // the list. This keeps the UI honest without requiring a background job.
-  if (user) {
-    await reapStaleTasks(id, user.id)
-  }
+  await reapStaleTasks(id, user.id)
 
   const { data: tasksData } = await supabase
     .from("ai_tasks")
     .select("id, title, kind, status, created_at, finished_at")
     .eq("project_id", id)
+    .eq("owner_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50)
 
@@ -62,6 +65,7 @@ export default async function AiPage({
         "id, project_id, prompt_id, kind, title, status, input, output, error, run_session_id, created_at, started_at, finished_at",
       )
       .eq("id", activeTaskId)
+      .eq("owner_id", user.id)
       .single()
     selectedTask = (taskData as unknown as AITaskRow | null) ?? null
 
@@ -71,12 +75,14 @@ export default async function AiPage({
           .from("ai_task_events")
           .select("id, kind, payload, created_at")
           .eq("task_id", activeTaskId)
+          .eq("owner_id", user.id)
           .order("created_at", { ascending: true }),
         selectedTask.prompt_id
           ? supabase
               .from("prompts")
               .select("body")
               .eq("id", selectedTask.prompt_id)
+              .eq("owner_id", user.id)
               .single()
           : Promise.resolve({ data: null as { body: string } | null }),
       ])

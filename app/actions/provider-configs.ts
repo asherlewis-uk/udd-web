@@ -58,14 +58,11 @@ export async function saveAIProviderConfig(input: SaveAIProviderConfigInput): Pr
   const config = sanitizeMetadata(input.metadata)
   const setAsDefault = input.setAsDefault ?? true
 
-  // Existing schema has secret_ref, but this path intentionally does not use
-  // it because there is no external secret manager integration yet.
-  const { error: clearSecretError } = await supabase
-    .from("provider_configs")
-    .update({ secret_ref: null })
-    .eq("owner_id", user.id)
-    .eq("kind", "ai")
-  if (clearSecretError) throw new Error(clearSecretError.message)
+  // Note: the upsert below writes secret_ref: null for the saved row.
+  // We no longer pre-clear secret_ref across all ai-kind rows because
+  // nothing in the app ever sets it to a non-null value; the redundant
+  // UPDATE was a wasted round trip. If/when a real secret-manager
+  // integration lands, revisit this clearing step.
 
   if (setAsDefault) {
     const { error: unsetError } = await supabase
