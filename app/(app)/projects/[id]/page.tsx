@@ -21,39 +21,10 @@ import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/server"
 import { formatRelative } from "@/lib/slug"
 import { cn } from "@/lib/utils"
-import type { AITaskStatus, Project, RunStatus } from "@/lib/types"
+import { deriveNextAction } from "@/lib/workspace/next-action"
+import type { Project, RunStatus } from "@/lib/types"
 import type { AITaskEventPayload } from "@/lib/ai/types"
-
-type LatestTask = {
-  id: string
-  title: string
-  kind: string
-  status: AITaskStatus
-  created_at: string
-  finished_at: string | null
-  error: string | null
-}
-
-type LatestRun = {
-  id: string
-  status: RunStatus
-  started_at: string | null
-}
-
-type ValidationSummary = {
-  message: string
-  blocking_count: number
-  warning_count: number
-  info_count: number
-} | null
-
-type WorkspaceAction = {
-  label: string
-  description: string
-  href: string
-  variant: "default" | "secondary" | "outline"
-  Icon: React.ComponentType<{ className?: string }>
-}
+import type { AITask, NextAction, RunSession, ValidationSummary } from "@/lib/workspace/next-action"
 
 export default async function WorkspacePage({
   params,
@@ -103,14 +74,15 @@ export default async function WorkspacePage({
   if (!projectData) notFound()
 
   const project = projectData as Project
-  const latestTask = taskData as LatestTask | null
-  const latestRun = latestRunData as LatestRun | null
+  const latestTask = taskData as AITask | null
+  const latestRunSession = latestRunData as RunSession | null
   const latestFileUpdated =
     (filesData?.[0] as { updated_at: string } | undefined)?.updated_at ?? null
 
-  // Fetch the validation summary event for the latest task (first validation event,
-  // which is always the summary — see lib/ai/service.ts writeValidationEvents).
-  let validationSummary: ValidationSummary = null
+  // Fetch the validation summary event for the latest task (first validation
+  // event, which is always the aggregate summary — see lib/ai/service.ts
+  // writeValidationEvents: summary is written before individual issue events).
+  let validationSummary: ValidationSummary | null = null
   if (latestTask) {
     const { data: valEvent } = await supabase
       .from("ai_task_events")
@@ -138,11 +110,17 @@ export default async function WorkspacePage({
   const count = filesCount ?? 0
   const taskInFlight = latestTask?.status === "pending" || latestTask?.status === "running"
   const runInFlight =
-    latestRun?.status === "starting" ||
-    latestRun?.status === "running" ||
-    latestRun?.status === "stopping"
+    latestRunSession?.status === "starting" ||
+    latestRunSession?.status === "running" ||
+    latestRunSession?.status === "stopping"
 
-  const nextAction = deriveNextAction({ latestTask, validationSummary, filesCount: count, latestRun, projectId: id })
+  const nextAction = deriveNextAction({
+    project,
+    latestTask,
+    validationSummary,
+    projectFilesCount: count,
+    latestRunSession,
+  })
 
   return (
     <WorkspaceContainer>
@@ -151,12 +129,12 @@ export default async function WorkspacePage({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="flex flex-col gap-4 lg:col-span-2">
           <AgentStatePanel latestTask={latestTask} validationSummary={validationSummary} projectId={id} />
-          <ProofPanel filesCount={count} latestFileUpdated={latestFileUpdated} latestRun={latestRun} projectId={id} />
+          <ProofPanel filesCount={count} latestFileUpdated={latestFileUpdated} latestRunSession={latestRunSession} projectId={id} />
         </div>
         <NextActionPanel action={nextAction} />
       </div>
 
-      <DetailLinks projectId={id} filesCount={count} latestTask={latestTask} latestRun={latestRun} />
+      <DetailLinks projectId={id} filesCount={count} latestTask={latestTask} latestRunSession={latestRunSession} />
 
       <TaskPoller active={taskInFlight} />
       <RunPoller active={runInFlight} />
@@ -211,8 +189,8 @@ function AgentStatePanel({
   validationSummary,
   projectId,
 }: {
-  latestTask: LatestTask | null
-  validationSummary: ValidationSummary
+  latestTask: AITask | null
+  validationSummary: ValidationSummary | null
   projectId: string
 }) {
   if (!latestTask) {
@@ -276,7 +254,7 @@ function AgentStatePanel({
   )
 }
 
-function ValidationSummaryRow({ summary }: { summary: NonNullable<ValidationSummary> }) {
+function ValidationSummaryRow({ summary }: { summary: ValidationSummary }) {
   if (summary.blocking_count === 0 && summary.warning_count === 0) {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs text-accent">
@@ -313,12 +291,12 @@ function ValidationSummaryRow({ summary }: { summary: NonNullable<ValidationSumm
 function ProofPanel({
   filesCount,
   latestFileUpdated,
-  latestRun,
+  latestRunSession,
   projectId,
 }: {
   filesCount: number
   latestFileUpdated: string | null
-  latestRun: LatestRun | null
+  latestRunSession: RunSession | null
   projectId: string
 }) {
   const RUN_LABELS: Partial<Record<RunStatus, string>> = {
@@ -329,12 +307,15 @@ function ProofPanel({
     error: "Parse errors found",
   }
 
-  const runLabel = latestRun ? (RUN_LABELS[latestRun.status] ?? latestRun.status) : "No validation run yet"
-  const runClass = latestRun?.status === "running"
-    ? "text-accent"
-    : latestRun?.status === "error"
-    ? "text-destructive"
-    : "text-foreground"
+  const runLabel = latestRunSession
+    ? (RUN_LABELS[latestRunSession.status] ?? latestRunSession.status)
+    : "No validation run yet"
+  const runClass =
+    latestRunSession?.status === "running"
+      ? "text-accent"
+      : latestRunSession?.status === "error"
+        ? "text-destructive"
+        : "text-foreground"
 
   return (
     <div className="rounded-lg border border-border bg-card p-5">
@@ -380,10 +361,25 @@ function ProofPanel({
 
 // ---------------------------------------------------------------------------
 // Next action panel
+// Rendering concerns (icon, button variant) are derived from NextAction.state.
+// All decision logic lives in lib/workspace/next-action.ts.
 // ---------------------------------------------------------------------------
 
-function NextActionPanel({ action }: { action: WorkspaceAction }) {
-  const Icon = action.Icon
+const STATE_DISPLAY: Record<
+  NextAction["state"],
+  {
+    variant: "default" | "secondary" | "outline"
+    Icon: React.ComponentType<{ className?: string }>
+  }
+> = {
+  idle: { variant: "default", Icon: Bot },
+  in_progress: { variant: "secondary", Icon: Clock },
+  blocked: { variant: "default", Icon: CircleAlert },
+  ready: { variant: "default", Icon: CheckCircle2 },
+}
+
+function NextActionPanel({ action }: { action: NextAction }) {
+  const { variant, Icon } = STATE_DISPLAY[action.state]
   return (
     <div className="flex flex-col justify-between gap-6 rounded-lg border border-border bg-card p-5">
       <div className="flex flex-col gap-3">
@@ -396,8 +392,8 @@ function NextActionPanel({ action }: { action: WorkspaceAction }) {
           <p className="text-xs leading-relaxed text-muted-foreground">{action.description}</p>
         </div>
       </div>
-      <Button asChild variant={action.variant} size="sm" className="w-full">
-        <Link href={action.href}>{action.label}</Link>
+      <Button asChild variant={variant} size="sm" className="w-full">
+        <Link href={action.cta.href}>{action.cta.label}</Link>
       </Button>
     </div>
   )
@@ -411,12 +407,12 @@ function DetailLinks({
   projectId,
   filesCount,
   latestTask,
-  latestRun,
+  latestRunSession,
 }: {
   projectId: string
   filesCount: number
-  latestTask: LatestTask | null
-  latestRun: LatestRun | null
+  latestTask: AITask | null
+  latestRunSession: RunSession | null
 }) {
   const links = [
     {
@@ -429,13 +425,18 @@ function DetailLinks({
       href: `/projects/${projectId}/files`,
       Icon: FolderTree,
       label: "Files",
-      meta: filesCount > 0 ? `${filesCount} file${filesCount === 1 ? "" : "s"} persisted` : "No files yet",
+      meta:
+        filesCount > 0
+          ? `${filesCount} file${filesCount === 1 ? "" : "s"} persisted`
+          : "No files yet",
     },
     {
       href: `/projects/${projectId}/run`,
       Icon: Play,
       label: "Run",
-      meta: latestRun ? `Last run: ${latestRun.status}` : "Validation-only — no runs yet",
+      meta: latestRunSession
+        ? `Last run: ${latestRunSession.status}`
+        : "Validation-only — no runs yet",
     },
     {
       href: `/projects/${projectId}/logs`,
@@ -476,140 +477,4 @@ function DetailLinks({
       </div>
     </div>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Next-action derivation
-// ---------------------------------------------------------------------------
-
-function deriveNextAction({
-  latestTask,
-  validationSummary,
-  filesCount,
-  latestRun,
-  projectId,
-}: {
-  latestTask: LatestTask | null
-  validationSummary: ValidationSummary
-  filesCount: number
-  latestRun: LatestRun | null
-  projectId: string
-}): WorkspaceAction {
-  const aiHref = `/projects/${projectId}/ai`
-  const runHref = `/projects/${projectId}/run`
-
-  if (!latestTask) {
-    return {
-      label: "Describe what to build",
-      description: "No AI tasks yet. Submit a prompt to generate your first project files.",
-      href: aiHref,
-      variant: "default",
-      Icon: Bot,
-    }
-  }
-
-  if (latestTask.status === "pending") {
-    return {
-      label: "Task queued",
-      description: "An AI task is pending. Go to the AI tab to monitor progress or cancel it.",
-      href: aiHref,
-      variant: "secondary",
-      Icon: Clock,
-    }
-  }
-
-  if (latestTask.status === "running") {
-    return {
-      label: "Agent is working",
-      description: "Files are being generated now. Go to the AI tab for live progress.",
-      href: aiHref,
-      variant: "secondary",
-      Icon: Bot,
-    }
-  }
-
-  if (latestTask.status === "failed") {
-    const hasBlocking = (validationSummary?.blocking_count ?? 0) > 0
-    return {
-      label: "Review and retry",
-      description: hasBlocking
-        ? "Static validation found blocking issues. Review them in the AI tab and retry with a revised prompt."
-        : "The last task failed. Review the error in the AI tab and retry.",
-      href: aiHref,
-      variant: "default",
-      Icon: CircleAlert,
-    }
-  }
-
-  if (latestTask.status === "cancelled") {
-    return {
-      label: "Resume work",
-      description: "The last task was cancelled. Submit a new prompt to continue.",
-      href: aiHref,
-      variant: "default",
-      Icon: Bot,
-    }
-  }
-
-  // status === "completed" — validation passed, files persisted (Intentional Constraint §1)
-
-  if (latestRun?.status === "starting" || latestRun?.status === "stopping") {
-    return {
-      label: "Validation in progress",
-      description: "A validation check is running. Go to the Run tab for live results.",
-      href: runHref,
-      variant: "secondary",
-      Icon: Clock,
-    }
-  }
-
-  if (latestRun?.status === "running") {
-    return {
-      label: "Continue building",
-      description: `${filesCount} file${filesCount === 1 ? "" : "s"} validated. Submit a new prompt to extend or refine the project.`,
-      href: aiHref,
-      variant: "default",
-      Icon: CheckCircle2,
-    }
-  }
-
-  if (latestRun?.status === "error") {
-    return {
-      label: "Check validation output",
-      description: "The last validation run found parse errors. Review the logs and fix or retry.",
-      href: runHref,
-      variant: "default",
-      Icon: CircleAlert,
-    }
-  }
-
-  const warnings = validationSummary?.warning_count ?? 0
-  if (warnings > 0 && !latestRun) {
-    return {
-      label: "Run validation check",
-      description: `Completed with ${warnings} warning${warnings === 1 ? "" : "s"}. Run a validation-only check to review parse results.`,
-      href: runHref,
-      variant: "secondary",
-      Icon: TriangleAlert,
-    }
-  }
-
-  // Clean completed (or stopped run), files exist — prompt to keep building or run validation
-  if (!latestRun) {
-    return {
-      label: "Run validation check",
-      description: `${filesCount > 0 ? `${filesCount} file${filesCount === 1 ? "" : "s"} persisted.` : "Task completed."} Run a validation-only check to confirm parse results.`,
-      href: runHref,
-      variant: "default",
-      Icon: Play,
-    }
-  }
-
-  return {
-    label: "Continue building",
-    description: "Submit a new prompt to extend or refine the project.",
-    href: aiHref,
-    variant: "default",
-    Icon: CheckCircle2,
-  }
 }
