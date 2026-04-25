@@ -81,7 +81,7 @@ export function deriveNextAction(input: {
   if (!latestTask) {
     return {
       label: "Describe what to build",
-      description: "No AI tasks yet. Submit a prompt to generate your first project files.",
+      description: "No work item yet. Describe the first change and UDD will draft saved files.",
       cta: { label: "Submit a prompt", href: aiHref },
       reason: "No ai_tasks row for this project. Work is entirely user-initiated.",
       state: "idle",
@@ -96,9 +96,9 @@ export function deriveNextAction(input: {
   //  "pending → running claim via conditional update eq('status','pending')")
   if (latestTask.status === "pending") {
     return {
-      label: "Task queued",
-      description: "An AI task is pending. The system will pick it up shortly.",
-      cta: { label: "View in AI tab", href: aiHref },
+      label: "Work item queued",
+      description: "UDD has the request and will start drafting files shortly.",
+      cta: { label: "Inspect work item", href: aiHref },
       reason:
         "Task status is pending — runAITask has been scheduled via after() but has not started yet " +
         "(system-state.md §AI Pipeline Task state transitions).",
@@ -115,9 +115,9 @@ export function deriveNextAction(input: {
   //  "running → failed on any error: generation, timeout, validation, or persistence")
   if (latestTask.status === "running") {
     return {
-      label: "Agent is working",
-      description: "Files are being generated now. Go to the AI tab for live progress.",
-      cta: { label: "View live progress", href: aiHref },
+      label: "UDD is drafting files",
+      description: "The current work item is being generated and checked before anything is saved.",
+      cta: { label: "Inspect work item", href: aiHref },
       reason:
         "Task status is running — the model is generating output. Outcome will be " +
         "completed or failed (system-state.md §AI Pipeline Task state transitions).",
@@ -137,13 +137,13 @@ export function deriveNextAction(input: {
   if (latestTask.status === "failed") {
     const blockingCount = validationSummary?.blocking_count ?? 0
     return {
-      label: "Review and retry",
+      label: "Review and revise",
       description:
         blockingCount > 0
-          ? `Static validation found ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"}. Review them in the AI tab and retry with a revised prompt.`
-          : "The last task failed. Review the error in the AI tab and retry.",
+          ? `The validation check found ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"}. Revise the prompt and try again.`
+          : "The last work item failed. Review the error and try again.",
       cta: {
-        label: blockingCount > 0 ? "Review issues" : "Retry task",
+        label: blockingCount > 0 ? "Inspect issues" : "Inspect work item",
         href: aiHref,
       },
       reason:
@@ -165,7 +165,7 @@ export function deriveNextAction(input: {
   if (latestTask.status === "cancelled") {
     return {
       label: "Resume work",
-      description: "The last task was cancelled. Submit a new prompt to continue.",
+      description: "The last work item was cancelled. Submit a new prompt to continue.",
       cta: { label: "Submit new prompt", href: aiHref },
       reason:
         "Task was cancelled by the user. No automatic retry — " +
@@ -197,8 +197,8 @@ export function deriveNextAction(input: {
     return {
       label: "Unexpected state",
       description:
-        "A completed task has blocking validation issues recorded. This should not occur — review the AI tab.",
-      cta: { label: "Review AI tab", href: aiHref },
+        "A saved work item has blocking validation issues recorded. This should not occur.",
+      cta: { label: "Inspect work item", href: aiHref },
       reason:
         "completed+blocking_count>0 is impossible per Intentional Constraint §1 " +
         "(system-state.md). Data inconsistency detected.",
@@ -216,10 +216,10 @@ export function deriveNextAction(input: {
   //  files would silently produce an incorrect view.")
   if (projectFilesCount === 0) {
     return {
-      label: "Files missing",
+      label: "Saved files missing",
       description:
-        "The last task completed but no files were found. This may indicate a data issue — review the AI tab.",
-      cta: { label: "Review AI tab", href: aiHref },
+        "The last work item finished but no saved files were found. This may indicate a data issue.",
+      cta: { label: "Inspect work item", href: aiHref },
       reason:
         "completed implies persistFiles succeeded (Intentional Constraint §1) but " +
         "projectFilesCount is 0. Data inconsistency.",
@@ -233,15 +233,15 @@ export function deriveNextAction(input: {
   //  "[none] → starting startRun inserts with status='starting'"
   //  "starting → running all files parse cleanly"
   //  "running/starting → stopping stopRun conditional update")
-  // Nothing is served at any point — validation-only.
+  // The runtime does not serve an app — validation-only.
   // (system-state.md §Runtime Pipeline — preview_url behavior:
   //  "preview_url is always null at runtime")
   if (latestRunSession?.status === "starting" || latestRunSession?.status === "stopping") {
     return {
-      label: "Validation in progress",
+      label: "Validation check in progress",
       description:
-        "A validation-only check is running. Go to the Run tab for live results.",
-      cta: { label: "View run", href: runHref },
+        "UDD is checking saved files with a parser. UDD can check files, but does not run or preview the app yet.",
+      cta: { label: "Inspect validation check", href: runHref },
       reason:
         "Run session status is starting/stopping — the parser is processing files " +
         "(system-state.md §Runtime Pipeline state machine). Nothing is served.",
@@ -260,7 +260,7 @@ export function deriveNextAction(input: {
   if (latestRunSession?.status === "running") {
     return {
       label: "Continue building",
-      description: `${projectFilesCount} file${projectFilesCount === 1 ? "" : "s"} validated — all parsed cleanly. Submit a new prompt to extend or refine the project.`,
+      description: `${projectFilesCount} saved file${projectFilesCount === 1 ? "" : "s"} passed the validation check. Describe the next change to keep going.`,
       cta: { label: "Continue building", href: aiHref },
       reason:
         "Run session status is running — all files parsed cleanly " +
@@ -276,10 +276,10 @@ export function deriveNextAction(input: {
   //  "starting → error no files found after loading")
   if (latestRunSession?.status === "error") {
     return {
-      label: "Check validation output",
+      label: "Review validation output",
       description:
-        "The last validation run found parse errors. Review the logs and revise.",
-      cta: { label: "View validation logs", href: runHref },
+        "The last validation check found parse errors. Revise the prompt or inspect the details.",
+      cta: { label: "Inspect validation check", href: runHref },
       reason:
         "Run session status is error — at least one file failed to parse " +
         "(system-state.md §Runtime Pipeline state machine).",
@@ -297,9 +297,9 @@ export function deriveNextAction(input: {
   const warnings = validationSummary?.warning_count ?? 0
   if (warnings > 0 && !latestRunSession) {
     return {
-      label: "Run validation check",
-      description: `Task completed with ${warnings} warning${warnings === 1 ? "" : "s"}. Run a validation-only check to review per-file results.`,
-      cta: { label: "Run validation check", href: runHref },
+      label: "Start validation check",
+      description: `The work item saved files with ${warnings} warning${warnings === 1 ? "" : "s"}. Start a validation check to review per-file results.`,
+      cta: { label: "Start validation check", href: runHref },
       reason:
         `Warnings present (warning_count=${warnings}) — they do not block completion ` +
         `(system-state.md §Validation Layer ok definition). No run session yet.`,
@@ -315,9 +315,9 @@ export function deriveNextAction(input: {
   //  when the user explicitly calls startRunAction or startRunFromTaskAction.")
   if (!latestRunSession) {
     return {
-      label: "Run validation check",
-      description: `${projectFilesCount} file${projectFilesCount === 1 ? "" : "s"} persisted. Run a validation-only check to confirm per-file parse results.`,
-      cta: { label: "Run validation check", href: runHref },
+      label: "Start validation check",
+      description: `${projectFilesCount} saved file${projectFilesCount === 1 ? "" : "s"} are ready. Start a validation check to confirm per-file parse results.`,
+      cta: { label: "Start validation check", href: runHref },
       reason:
         "Task completed cleanly, no run session. Run sessions are user-initiated " +
         "(system-state.md §Execution Semantics Explicit absence of automation).",

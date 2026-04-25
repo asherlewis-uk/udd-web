@@ -17,7 +17,7 @@ async function getUser() {
 }
 
 /**
- * Hard cap on simultaneously-live AI tasks per user. Both initial creation
+ * Hard cap on simultaneously-live work items per user. Both initial creation
  * and retry-from-failed go through this. The reaper in lib/ai/service
  * terminalizes stalled work after 10 minutes, so this limit is
  * self-healing — a dead task will be cleared by the next visit to the AI
@@ -38,19 +38,20 @@ async function enforceConcurrencyLimit(
   if (error) throw new Error(error.message)
   if ((count ?? 0) >= MAX_LIVE_TASKS_PER_USER) {
     throw new Error(
-      `You already have ${count} AI tasks in flight. Wait for them to finish (or cancel one) before starting another.`,
+      `You already have ${count} work items in progress. Wait for them to finish (or cancel one) before starting another.`,
     )
   }
 }
 
 /**
  * Create a prompt + an ai_task in 'pending' state, then schedule background
- * processing via `after()`. Returns by redirecting to the AI tab focused on
- * the new task.
+ * processing via `after()`. By default, redirects to the AI tab focused on
+ * the new task; the cockpit can request a same-page return with redirect_to.
  */
 export async function createAITask(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim()
   const prompt = String(formData.get("prompt") ?? "").trim()
+  const redirectTo = String(formData.get("redirect_to") ?? "").trim()
   if (!projectId) throw new Error("Missing project id")
   if (!prompt) throw new Error("Prompt is required")
   if (prompt.length > 4000) throw new Error("Prompt is too long (max 4000 chars)")
@@ -104,8 +105,13 @@ export async function createAITask(formData: FormData) {
   })
 
   revalidatePath(`/projects/${projectId}/ai`)
+  revalidatePath(`/projects/${projectId}`)
   revalidatePath("/projects")
-  redirect(`/projects/${projectId}/ai?task=${taskRow.id}`)
+  redirect(
+    redirectTo === `/projects/${projectId}`
+      ? redirectTo
+      : `/projects/${projectId}/ai?task=${taskRow.id}`,
+  )
 }
 
 /**

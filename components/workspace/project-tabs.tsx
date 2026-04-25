@@ -3,14 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import {
-  LayoutGrid,
-  FolderTree,
-  Bot,
-  Play,
-  Terminal,
-  Settings2,
-} from "lucide-react"
+import { FolderTree, Bot, Play, Terminal, Settings2 } from "lucide-react"
 
 type Tab = {
   href: (id: string) => string
@@ -20,12 +13,6 @@ type Tab = {
 }
 
 const TABS: Tab[] = [
-  {
-    href: (id) => `/projects/${id}`,
-    match: (p, id) => p === `/projects/${id}`,
-    label: "Workspace",
-    icon: LayoutGrid,
-  },
   {
     href: (id) => `/projects/${id}/files`,
     match: (p, id) => p.startsWith(`/projects/${id}/files`),
@@ -61,10 +48,7 @@ const TABS: Tab[] = [
 export function ProjectTabs({ projectId }: { projectId: string }) {
   const pathname = usePathname()
   return (
-    <nav
-      aria-label="Project sections"
-      className="-mb-px flex items-center gap-1 overflow-x-auto"
-    >
+    <nav aria-label="Project sections" className="-mb-px flex items-center gap-0.5">
       {TABS.map((tab) => {
         const active = tab.match(pathname, projectId)
         const Icon = tab.icon
@@ -72,16 +56,17 @@ export function ProjectTabs({ projectId }: { projectId: string }) {
           <Link
             key={tab.label}
             href={tab.href(projectId)}
+            title={tab.label}
+            aria-label={tab.label}
+            aria-current={active ? "page" : undefined}
             className={cn(
-              "inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition",
+              "inline-flex items-center justify-center rounded-sm border-b-2 p-2 transition",
               active
                 ? "border-foreground text-foreground"
                 : "border-transparent text-muted-foreground hover:text-foreground",
             )}
-            aria-current={active ? "page" : undefined}
           >
             <Icon className="h-4 w-4" />
-            {tab.label}
           </Link>
         )
       })}
