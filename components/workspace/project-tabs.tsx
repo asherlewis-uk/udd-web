@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
-  LayoutDashboard,
+  LayoutGrid,
   FolderTree,
   Bot,
   Play,
@@ -23,8 +23,8 @@ const TABS: Tab[] = [
   {
     href: (id) => `/projects/${id}`,
     match: (p, id) => p === `/projects/${id}`,
-    label: "Overview",
-    icon: LayoutDashboard,
+    label: "Workspace",
+    icon: LayoutGrid,
   },
   {
     href: (id) => `/projects/${id}/files`,
