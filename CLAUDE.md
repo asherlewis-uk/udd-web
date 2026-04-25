@@ -101,7 +101,7 @@ Swapping model: set `UDD_AI_PROVIDER=openai|anthropic`. Adding a provider = add 
 Flow: `startRunAction` → `startRun(projectId)` inserts `run_sessions (status='starting')` → `after(() => driveSession(sessionId))` → poller picks up.
 
 - `lib/runtime/executor.ts` — pure: `loadProjectFiles` (falls back to latest completed AI task's output if `project_files` is empty), `analyzeFile` (real syntactic check: `JSON.parse` for `.json`, `@babel/parser` with `typescript` + `jsx` + `decorators-legacy` for `.js/.jsx/.ts/.tsx/.mjs/.cjs`, byte-count only for anything else).
-- `lib/runtime/service.ts` — `startRun` / `driveSession` / `stopRun`. Writes `run_events` rows that reflect actual parse outcomes (`ok path bytes` / `FAIL path: message`). Any parse failure transitions the session to `status='error'`. Preview URLs are synthetic (`https://preview.local/<slug>?session=<id8>`).
+- `lib/runtime/service.ts` — `startRun` / `driveSession` / `stopRun`. Writes `run_events` rows that reflect actual parse outcomes (`ok path bytes` / `FAIL path: message`). Any parse failure transitions the session to `status='error'`. The runtime is validation-only — nothing is served or previewed. `run_sessions.preview_url` remains `NULL`; writing a synthetic URL is forbidden by the Preview Truth invariant above.
 - `startRunFromTaskAction` (in `app/actions/run.ts`) reuses the linked `run_session_id` if it's still live, otherwise starts a new one and writes the link back.
 
 ### Background work pattern
@@ -123,6 +123,16 @@ Every long-running operation uses `after()` from `next/server` so the action ret
 - The AI generator's Zod schema must stay fully-required — OpenAI strict mode via AI SDK 6 rejects `optional()`.
 - Supabase `createServerClient` cookie `setAll` may be called from a Server Component; swallow the thrown error (middleware owns the actual refresh). The existing helper already does this.
 - `[v0]` prefixed `console.log` lines are the convention for non-fatal server diagnostics.
+
+## system-state.md Enforcement
+
+Before modifying any behavior described in `docs/system-state.md`:
+- Read the relevant section of `docs/system-state.md`.
+- Confirm the section accurately reflects current source.
+- If the behavior is altered by the change, update `docs/system-state.md` in the same commit.
+- Do not rely on remembered summaries — reference the document directly by section header.
+
+This applies to: AI pipeline, validation layer, runtime pipeline, execution semantics, and schema surfaces with no callers.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
