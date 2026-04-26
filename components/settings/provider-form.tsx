@@ -1,53 +1,53 @@
-"use client"
+"use client";
 
-import { useState, useTransition } from "react"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
+import { useState, useTransition } from "react";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { saveAIProviderConfig } from "@/app/actions/provider-configs"
-import { getProviderOptions, type ProviderId } from "@/lib/ai/providers"
+} from "@/components/ui/select";
+import { saveAIProviderConfig } from "@/app/actions/provider-configs";
+import { getProviderOptions, type ProviderId } from "@/lib/ai/providers";
 
-const PROVIDER_OPTIONS = getProviderOptions()
+const PROVIDER_OPTIONS = getProviderOptions();
 
 export function ProviderForm({
   currentProviderId,
 }: {
-  currentProviderId: ProviderId | null
+  currentProviderId: ProviderId | null;
 }) {
   // When nothing is saved, the Select visually shows "openai" but there is
   // no row in provider_configs yet. We track the baseline as-selected in
   // the UI so the Save button is only enabled on a real change.
-  const initial: ProviderId = currentProviderId ?? "openai"
-  const [selected, setSelected] = useState<ProviderId>(initial)
-  const [baseline, setBaseline] = useState<ProviderId>(initial)
-  const [isPending, startTransition] = useTransition()
-  const [message, setMessage] = useState<string | null>(null)
+  const initial: ProviderId = currentProviderId ?? "openai";
+  const [selected, setSelected] = useState<ProviderId>(initial);
+  const [baseline, setBaseline] = useState<ProviderId>(initial);
+  const [isPending, startTransition] = useTransition();
+  const [message, setMessage] = useState<string | null>(null);
 
-  const isDirty = selected !== baseline
+  const isDirty = selected !== baseline;
 
   const handleSave = () => {
-    setMessage(null)
+    setMessage(null);
     startTransition(async () => {
       try {
         await saveAIProviderConfig({
           providerId: selected,
           setAsDefault: true,
-        })
+        });
         // Move the baseline so Save greys out until the user changes
         // selection again.
-        setBaseline(selected)
-        setMessage("Provider preference saved.")
+        setBaseline(selected);
+        setMessage("Provider preference saved.");
       } catch (err) {
-        setMessage(err instanceof Error ? err.message : "Failed to save.")
+        setMessage(err instanceof Error ? err.message : "Failed to save.");
       }
-    })
-  }
+    });
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -83,5 +83,5 @@ export function ProviderForm({
         )}
       </div>
     </div>
-  )
+  );
 }

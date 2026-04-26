@@ -11,15 +11,15 @@ Maintained under the rules in CLAUDE.md §system-state.md Enforcement.
 
 ### Named constants
 
-| Constant | Value | Source |
-|---|---|---|
-| `MAX_LIVE_TASKS_PER_USER` | 3 | app/actions/ai.ts:31 |
-| `GENERATION_TIMEOUT_MS` | 300 000 ms (5 min) | lib/ai/service.ts:19 |
-| `STALE_TASK_MS` | 600 000 ms (10 min) | lib/ai/service.ts:262 |
-| `MAX_VALIDATION_ISSUE_EVENTS` | 50 | lib/ai/service.ts:376 |
-| Max output tokens — `scaffold` | 8 000 | lib/ai/generator.ts:15 |
-| Max output tokens — all other kinds | 4 000 | lib/ai/generator.ts:15 |
-| Files per generation | 1–8 (min/max on Zod array) | lib/ai/generator.ts:38–39 |
+| Constant                            | Value                      | Source                    |
+| ----------------------------------- | -------------------------- | ------------------------- |
+| `MAX_LIVE_TASKS_PER_USER`           | 3                          | app/actions/ai.ts:31      |
+| `GENERATION_TIMEOUT_MS`             | 300 000 ms (5 min)         | lib/ai/service.ts:19      |
+| `STALE_TASK_MS`                     | 600 000 ms (10 min)        | lib/ai/service.ts:262     |
+| `MAX_VALIDATION_ISSUE_EVENTS`       | 50                         | lib/ai/service.ts:376     |
+| Max output tokens — `scaffold`      | 8 000                      | lib/ai/generator.ts:15    |
+| Max output tokens — all other kinds | 4 000                      | lib/ai/generator.ts:15    |
+| Files per generation                | 1–8 (min/max on Zod array) | lib/ai/generator.ts:38–39 |
 
 ### Task state transitions
 
@@ -67,23 +67,23 @@ Within `dependencyValidate`: if `package.json` is present but fails object valid
 
 > Summary — canonical source: lib/validation/types.ts:12–28
 
-| Kind | Layer | Severity | Trigger |
-|---|---|---|---|
-| `parse_error` | Structural | blocking | JS/TS file fails `@babel/parser` |
-| `empty_file` | Structural | blocking (JS/TS) · warning (text/unknown) | File byte-length is zero |
-| `trivial_file` | Structural | warning | JS has only whitespace or bare `export {}`; JSON is `{}` or empty |
-| `extension_mismatch` | Structural | warning | `.ts` file contains JSX nodes |
-| `invalid_json` | Structural | blocking | Any `.json` file fails `JSON.parse` |
-| `missing_entrypoint` | Project-shape | blocking | Bare imports exist but no `package.json`; or Next.js project has no `app/**/page.*`; or `package.json` `main`/`module` points to a missing file |
-| `malformed_layout` | Project-shape | blocking | Next.js project is missing `app/layout.{tsx,ts,jsx,js}` |
-| `invalid_package_json` | Dependency | blocking | `package.json` parses as JSON but the result is not an object |
-| `missing_dependency` | Dependency | blocking | Bare import references a package not in `dependencies`, `devDependencies`, or `peerDependencies` |
-| `unused_dependency` | Dependency | info | Declared dep is never imported and is not in `ALWAYS_ALLOWED`, `KNOWN_INDIRECT_DEPS`, or `package.json` scripts |
-| `missing_import` | Semantic | blocking (value import) · warning (type-only import) | Relative or alias import resolves to no file in the project |
-| `case_sensitivity` | Semantic | warning | Import resolves to a file only case-insensitively |
-| `duplicate_export` | Semantic | blocking | Export name declared more than once in the same file |
-| `client_imports_server` | Semantic | blocking | `"use client"` file imports a `"use server"` file |
-| `circular_dependency` | Semantic | warning | Cycle detected in import graph via DFS |
+| Kind                    | Layer         | Severity                                             | Trigger                                                                                                                                         |
+| ----------------------- | ------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `parse_error`           | Structural    | blocking                                             | JS/TS file fails `@babel/parser`                                                                                                                |
+| `empty_file`            | Structural    | blocking (JS/TS) · warning (text/unknown)            | File byte-length is zero                                                                                                                        |
+| `trivial_file`          | Structural    | warning                                              | JS has only whitespace or bare `export {}`; JSON is `{}` or empty                                                                               |
+| `extension_mismatch`    | Structural    | warning                                              | `.ts` file contains JSX nodes                                                                                                                   |
+| `invalid_json`          | Structural    | blocking                                             | Any `.json` file fails `JSON.parse`                                                                                                             |
+| `missing_entrypoint`    | Project-shape | blocking                                             | Bare imports exist but no `package.json`; or Next.js project has no `app/**/page.*`; or `package.json` `main`/`module` points to a missing file |
+| `malformed_layout`      | Project-shape | blocking                                             | Next.js project is missing `app/layout.{tsx,ts,jsx,js}`                                                                                         |
+| `invalid_package_json`  | Dependency    | blocking                                             | `package.json` parses as JSON but the result is not an object                                                                                   |
+| `missing_dependency`    | Dependency    | blocking                                             | Bare import references a package not in `dependencies`, `devDependencies`, or `peerDependencies`                                                |
+| `unused_dependency`     | Dependency    | info                                                 | Declared dep is never imported and is not in `ALWAYS_ALLOWED`, `KNOWN_INDIRECT_DEPS`, or `package.json` scripts                                 |
+| `missing_import`        | Semantic      | blocking (value import) · warning (type-only import) | Relative or alias import resolves to no file in the project                                                                                     |
+| `case_sensitivity`      | Semantic      | warning                                              | Import resolves to a file only case-insensitively                                                                                               |
+| `duplicate_export`      | Semantic      | blocking                                             | Export name declared more than once in the same file                                                                                            |
+| `client_imports_server` | Semantic      | blocking                                             | `"use client"` file imports a `"use server"` file                                                                                               |
+| `circular_dependency`   | Semantic      | warning                                              | Cycle detected in import graph via DFS                                                                                                          |
 
 Sources: lib/validation/structural.ts, lib/validation/project-shape.ts, lib/validation/dependency.ts, lib/validation/semantic.ts
 
@@ -99,9 +99,9 @@ Files not in `newPaths` are still included in import resolution (so cross-file e
 
 ### Merge semantics for the file-set passed to `validateProject`
 
-| Task `kind` | Merged file-set |
-|---|---|
-| `scaffold` | Generated files only |
+| Task `kind`                            | Merged file-set                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `scaffold`                             | Generated files only                                                                              |
 | `edit`, `refactor`, `explain`, `other` | Existing `project_files` rows overlaid with generated files; generated files win on path conflict |
 
 Source: lib/ai/service.ts:394–425
@@ -112,8 +112,8 @@ Source: lib/ai/service.ts:394–425
 
 ### Named constants
 
-| Constant | Value | Source |
-|---|---|---|
+| Constant           | Value               | Source                     |
+| ------------------ | ------------------- | -------------------------- |
 | `STALE_SESSION_MS` | 600 000 ms (10 min) | lib/runtime/service.ts:279 |
 
 ### State machine
@@ -140,11 +140,11 @@ All transitions are conditional updates that no-op if a concurrent driver has al
 
 ### `analyzeFile` behavior per extension
 
-| Extension(s) | Parser | Failure result |
-|---|---|---|
-| `.json` | `JSON.parse` | `{ ok: false, message: <error text> }` |
+| Extension(s)                                 | Parser                                                                 | Failure result                          |
+| -------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------- |
+| `.json`                                      | `JSON.parse`                                                           | `{ ok: false, message: <error text> }`  |
 | `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.tsx` | `@babel/parser` with plugins: `typescript`, `jsx`, `decorators-legacy` | `{ ok: false, message: <parse error> }` |
-| All other extensions | Byte-count only | Always `{ ok: true }` |
+| All other extensions                         | Byte-count only                                                        | Always `{ ok: true }`                   |
 
 Source: lib/runtime/executor.ts:87, 99–134
 
@@ -153,6 +153,7 @@ Source: lib/runtime/executor.ts:87, 99–134
 `run_sessions.preview_url` is **always `null`** at runtime. No code in the runtime pipeline writes to this column. (lib/runtime/service.ts:212–216)
 
 The comment at lib/runtime/service.ts:212–216 states:
+
 > "No preview URL is written: nothing is actually served, and a synthetic URL would violate the Preview Truth invariant in CLAUDE.md. preview_url stays NULL."
 
 Nothing is booted, served, or previewed by the runtime pipeline.
@@ -187,14 +188,15 @@ No API key input exists in the provider surfaces. No code path reads user creden
 
 Each surface below is labeled **schema only — no app code callers**.
 
-| Surface | Schema location | Status | Source |
-|---|---|---|---|
-| `exports` table | scripts/001_init_schema.sql | schema only — no app code callers | scripts/004_document_forward_looking.sql |
-| `previews` table | scripts/001_init_schema.sql | schema only — no app code callers | Verified by reading all files in lib/ and app/actions/ |
-| `provider_configs.secret_ref` column | scripts/001_init_schema.sql | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql |
-| `run_sessions.preview_url` column | scripts/001_init_schema.sql | schema only — always null — no app code callers | lib/runtime/service.ts:212–216 |
+| Surface                              | Schema location             | Status                                          | Source                                                 |
+| ------------------------------------ | --------------------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| `exports` table                      | scripts/001_init_schema.sql | schema only — no app code callers               | scripts/004_document_forward_looking.sql               |
+| `previews` table                     | scripts/001_init_schema.sql | schema only — no app code callers               | Verified by reading all files in lib/ and app/actions/ |
+| `provider_configs.secret_ref` column | scripts/001_init_schema.sql | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql               |
+| `run_sessions.preview_url` column    | scripts/001_init_schema.sql | schema only — always null — no app code callers | lib/runtime/service.ts:212–216                         |
 
 From scripts/004_document_forward_looking.sql:
+
 - `exports`: _"Schema + RLS are in place; no application code reads or writes this table yet. Kept so the export feature can land without a migration."_
 - `provider_configs.secret_ref`: _"Always null today — credentials come from env. Never store raw secrets in this column."_
 
@@ -204,10 +206,10 @@ From scripts/004_document_forward_looking.sql:
 
 ### Poller components
 
-| Component | Interval | Active when | Source |
-|---|---|---|---|
-| `TaskPoller` | 800 ms | `anyInFlight` — any task has `status` `pending` or `running` | components/ai/task-poller.tsx:17, app/(app)/projects/[id]/ai/page.tsx:55 |
-| `RunPoller` | 700 ms | `inFlight` — session `status` is `starting`, `running`, or `stopping` | components/run/run-poller.tsx:17, app/(app)/projects/[id]/run/page.tsx:77–78 |
+| Component    | Interval | Active when                                                           | Source                                                                       |
+| ------------ | -------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `TaskPoller` | 800 ms   | `anyInFlight` — any task has `status` `pending` or `running`          | components/ai/task-poller.tsx:17, app/(app)/projects/[id]/ai/page.tsx:55     |
+| `RunPoller`  | 700 ms   | `inFlight` — session `status` is `starting`, `running`, or `stopping` | components/run/run-poller.tsx:17, app/(app)/projects/[id]/run/page.tsx:77–78 |
 
 ### Mechanism
 
@@ -229,33 +231,33 @@ There are no WebSocket connections, no Supabase Realtime subscriptions, and no s
 
 All of the following require an explicit user action (form submission or button press):
 
-| Action | Server action | Source |
-|---|---|---|
-| Submit AI prompt | `createAITask` | app/actions/ai.ts:51 |
-| Retry a task still in `pending` | `retryPendingTask` | app/actions/ai.ts:115 |
-| Retry a `failed` or `cancelled` task | `retryFailedTask` | app/actions/ai.ts:189 |
-| Cancel a `pending` or `running` task | `cancelAITask` | app/actions/ai.ts:138 |
-| Delete a terminal-state task | `deleteAITask` | app/actions/ai.ts:165 |
-| Start a run session | `startRunAction` | app/actions/run.ts:13 |
-| Stop a run session | `stopRunAction` | app/actions/run.ts:32 |
+| Action                               | Server action            | Source                |
+| ------------------------------------ | ------------------------ | --------------------- |
+| Submit AI prompt                     | `createAITask`           | app/actions/ai.ts:51  |
+| Retry a task still in `pending`      | `retryPendingTask`       | app/actions/ai.ts:115 |
+| Retry a `failed` or `cancelled` task | `retryFailedTask`        | app/actions/ai.ts:189 |
+| Cancel a `pending` or `running` task | `cancelAITask`           | app/actions/ai.ts:138 |
+| Delete a terminal-state task         | `deleteAITask`           | app/actions/ai.ts:165 |
+| Start a run session                  | `startRunAction`         | app/actions/run.ts:13 |
+| Stop a run session                   | `stopRunAction`          | app/actions/run.ts:32 |
 | Start a run from a completed AI task | `startRunFromTaskAction` | app/actions/run.ts:49 |
 
 ### System-triggered (via `after()`, runs after HTTP response flushes)
 
-| Work unit | Scheduled by | Source |
-|---|---|---|
-| `runAITask(taskId)` | `createAITask` | app/actions/ai.ts:102–104 |
-| `runAITask(taskId)` | `retryFailedTask` | app/actions/ai.ts:228–230 |
-| `runAITask(taskId)` | `retryPendingTask` | app/actions/ai.ts:125–127 |
-| `driveSession(sessionId)` | `startRunAction` | app/actions/run.ts:19–21 |
+| Work unit                    | Scheduled by                                                | Source                     |
+| ---------------------------- | ----------------------------------------------------------- | -------------------------- |
+| `runAITask(taskId)`          | `createAITask`                                              | app/actions/ai.ts:102–104  |
+| `runAITask(taskId)`          | `retryFailedTask`                                           | app/actions/ai.ts:228–230  |
+| `runAITask(taskId)`          | `retryPendingTask`                                          | app/actions/ai.ts:125–127  |
+| `driveSession(sessionId)`    | `startRunAction`                                            | app/actions/run.ts:19–21   |
 | `driveSession(newSessionId)` | `startRunFromTaskAction` (when it wins the link-claim race) | app/actions/run.ts:109–111 |
-| `validateProject(...)` | Inside `runAITask` — not directly callable by user | lib/ai/service.ts:187 |
+| `validateProject(...)`       | Inside `runAITask` — not directly callable by user          | lib/ai/service.ts:187      |
 
 ### Page-load triggered (opportunistic, on server render)
 
-| Function | Page | Source |
-|---|---|---|
-| `reapStaleTasks` | AI tab (`/projects/[id]/ai`) render | app/(app)/projects/[id]/ai/page.tsx:44 |
+| Function            | Page                                  | Source                                  |
+| ------------------- | ------------------------------------- | --------------------------------------- |
+| `reapStaleTasks`    | AI tab (`/projects/[id]/ai`) render   | app/(app)/projects/[id]/ai/page.tsx:44  |
 | `reapStaleSessions` | Run tab (`/projects/[id]/run`) render | app/(app)/projects/[id]/run/page.tsx:35 |
 
 ### Explicit absence of automation
@@ -305,4 +307,3 @@ _Why_: Writing a fake URL violates the Preview Truth invariant in CLAUDE.md §Pr
 `runAITask` and `driveSession` must be scheduled via `after()`, not awaited inline in the server action. (app/actions/ai.ts:102–104, app/actions/run.ts:19–21)
 
 _Why_: The task or session row must be inserted and visible in the UI before background execution begins. Awaiting inline would block the HTTP response until model generation or file parsing completes, preventing visible progress state from ever rendering.
-

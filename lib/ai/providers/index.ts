@@ -5,16 +5,16 @@
  * provider-agnostic.
  */
 
-export type ProviderId = "openai" | "anthropic"
+export type ProviderId = "openai" | "anthropic";
 
 export type ProviderConfig = {
-  id: ProviderId
-  label: string
+  id: ProviderId;
+  label: string;
   /** AI Gateway model string, e.g. "openai/gpt-5-mini" */
-  model: string
+  model: string;
   /** Human-friendly model name for UI surfaces, e.g. "GPT-5 Mini" */
-  modelDisplayName: string
-}
+  modelDisplayName: string;
+};
 
 export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
   openai: {
@@ -29,12 +29,14 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     model: "anthropic/claude-opus-4.6",
     modelDisplayName: "Claude Opus 4.6",
   },
-}
+};
 
-const DEFAULT_PROVIDER: ProviderId = "openai"
+const DEFAULT_PROVIDER: ProviderId = "openai";
 
-export function isProviderId(value: string | undefined | null): value is ProviderId {
-  return value === "openai" || value === "anthropic"
+export function isProviderId(
+  value: string | undefined | null,
+): value is ProviderId {
+  return value === "openai" || value === "anthropic";
 }
 
 /**
@@ -42,23 +44,23 @@ export function isProviderId(value: string | undefined | null): value is Provide
  * to OpenAI. Individual callers may override via `getProvider(id)`.
  */
 export function getActiveProvider(): ProviderConfig {
-  const envProvider = process.env.UDD_AI_PROVIDER?.toLowerCase()
+  const envProvider = process.env.UDD_AI_PROVIDER?.toLowerCase();
   if (isProviderId(envProvider)) {
-    return PROVIDERS[envProvider]
+    return PROVIDERS[envProvider];
   }
-  return PROVIDERS[DEFAULT_PROVIDER]
+  return PROVIDERS[DEFAULT_PROVIDER];
 }
 
 export function getProvider(id?: ProviderId | null): ProviderConfig {
-  if (id && id in PROVIDERS) return PROVIDERS[id]
-  return getActiveProvider()
+  if (id && id in PROVIDERS) return PROVIDERS[id];
+  return getActiveProvider();
 }
 
-export type ProviderOption = { id: ProviderId; label: string }
+export type ProviderOption = { id: ProviderId; label: string };
 
 export function getProviderOptions(): ProviderOption[] {
   return (Object.keys(PROVIDERS) as ProviderId[]).map((id) => {
-    const provider = PROVIDERS[id]
-    return { id, label: `${provider.label} (${provider.modelDisplayName})` }
-  })
+    const provider = PROVIDERS[id];
+    return { id, label: `${provider.label} (${provider.modelDisplayName})` };
+  });
 }
