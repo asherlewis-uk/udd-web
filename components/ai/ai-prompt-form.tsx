@@ -5,8 +5,16 @@ import Link from "next/link"
 import { ArrowRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
+import { ProviderSwitcher } from "@/components/ai/provider-switcher"
 import { createAITask } from "@/app/actions/ai"
 import { cn } from "@/lib/utils"
+import type { ProviderId } from "@/lib/ai/providers"
+
+export type ActiveProviderInfo = {
+  id: ProviderId
+  label: string
+  model: string
+}
 
 type State = { error: string | null }
 
@@ -35,11 +43,13 @@ export function AIPromptForm({
   redirectTo,
   variant = "default",
   busy,
+  activeProvider,
 }: {
   projectId: string
   redirectTo?: string
   variant?: "default" | "cockpit"
   busy?: boolean
+  activeProvider?: ActiveProviderInfo
 }) {
   const [state, formAction, pending] = useActionState<State, FormData>(action, { error: null })
   const formRef = useRef<HTMLFormElement>(null)
@@ -89,6 +99,17 @@ export function AIPromptForm({
           }
         }}
       />
+      {cockpit && activeProvider ? (
+        <div className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            <span className="text-muted-foreground/80">Provider for new tasks</span>
+            <ProviderSwitcher currentProviderId={activeProvider.id} disabled={pending} />
+          </div>
+          <span className="text-muted-foreground/70">
+            Selects the provider only. Credentials come from the server environment — UDD does not accept or store API keys. Tasks fail if the environment isn&apos;t configured for the selected provider.
+          </span>
+        </div>
+      ) : null}
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           {cockpit ? (

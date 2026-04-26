@@ -11,12 +11,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { saveAIProviderConfig } from "@/app/actions/provider-configs"
-import type { ProviderId } from "@/lib/ai/providers"
+import { getProviderOptions, type ProviderId } from "@/lib/ai/providers"
 
-const PROVIDER_OPTIONS: { id: ProviderId; label: string }[] = [
-  { id: "openai", label: "OpenAI (GPT-5 Mini)" },
-  { id: "anthropic", label: "Anthropic (Claude Opus 4.6)" },
-]
+const PROVIDER_OPTIONS = getProviderOptions()
 
 export function ProviderForm({
   currentProviderId,

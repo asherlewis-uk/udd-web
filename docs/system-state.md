@@ -159,6 +159,30 @@ Nothing is booted, served, or previewed by the runtime pipeline.
 
 ---
 
+## Provider Selection — Active provider resolution and credential handling
+
+### Supported providers and option registry
+
+Two AI providers are defined in the single `PROVIDERS` registry: `openai` (`openai/gpt-5-mini`) and `anthropic` (`anthropic/claude-opus-4.6`). UI option labels are derived from that registry by `getProviderOptions`, not duplicated in client components. (lib/ai/providers/index.ts:19–30, 59–62)
+
+### Resolution and generation path
+
+`getActiveProviderForOwner(ownerId, supabase)` first reads the user's active default `provider_configs` row for `kind='ai'`, then falls back to `getActiveProvider()`, which reads `UDD_AI_PROVIDER`, validates it with `isProviderId`, and defaults to `openai` when unset or invalid. (lib/ai/providers/server.ts:12–41, lib/ai/providers/index.ts:44–49)
+
+`runAITask` passes the resolved provider into `generateResult`, and `generateResult` forwards only `provider.model` to `streamText`. (lib/ai/service.ts:104–106, lib/ai/generator.ts:71–75)
+
+### User surfaces
+
+Settings and the cockpit switcher both write through `saveAIProviderConfig`; the save action semantics are unchanged. (components/settings/provider-form.tsx:14–16, 38–43; components/ai/provider-switcher.tsx:13–16, 45; app/actions/provider-configs.ts:46–110)
+
+The cockpit page resolves the active provider server-side and passes it to `AIPromptForm`, which renders provider selection copy stating that selection only chooses the provider, credentials come from the server environment, UDD does not accept or store API keys, and tasks fail if the environment is not configured for the selected provider. (app/(app)/projects/[id]/page.tsx:99–105, 165, 296–305; components/ai/ai-prompt-form.tsx:102–109)
+
+### Credential handling — env-managed only
+
+No API key input exists in the provider surfaces. No code path reads user credentials. `saveAIProviderConfig` rejects secret-shaped metadata keys/values and every upsert writes `secret_ref: null`. (app/actions/provider-configs.ts:13–30, 82)
+
+---
+
 ## Schema surfaces — No current app-code callers
 
 Each surface below is labeled **schema only — no app code callers**.

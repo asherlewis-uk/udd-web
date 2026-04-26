@@ -26,8 +26,10 @@ import { createClient } from "@/lib/supabase/server"
 import { formatRelative } from "@/lib/slug"
 import { cn } from "@/lib/utils"
 import { deriveNextAction } from "@/lib/workspace/next-action"
+import { getActiveProviderForOwner } from "@/lib/ai/providers/server"
 import type { Project, RunStatus } from "@/lib/types"
 import type { AITaskEventPayload } from "@/lib/ai/types"
+import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form"
 import type { AITask, NextAction, RunSession, ValidationSummary } from "@/lib/workspace/next-action"
 
 type LatestTask = AITask & {
@@ -94,6 +96,13 @@ export default async function WorkspacePage({
 
   if (!projectData) notFound()
 
+  const providerConfig = await getActiveProviderForOwner(user.id, supabase)
+  const activeProvider: ActiveProviderInfo = {
+    id: providerConfig.id,
+    label: providerConfig.label,
+    model: providerConfig.model,
+  }
+
   const project = projectData as Project
   const latestTask = taskData as LatestTask | null
   const latestRunSession = latestRunData as LatestRunSession | null
@@ -153,7 +162,7 @@ export default async function WorkspacePage({
 
         <div className="flex-none flex flex-col gap-2 px-6 pb-6 pt-5">
           <AssistantMessageBubble action={nextAction} projectId={id} />
-          <CockpitPromptForm projectId={id} busy={taskInFlight} />
+          <CockpitPromptForm projectId={id} busy={taskInFlight} activeProvider={activeProvider} />
         </div>
       </div>
 
@@ -284,8 +293,16 @@ function AssistantMessageBubble({ action, projectId }: { action: NextAction; pro
   )
 }
 
-function CockpitPromptForm({ projectId, busy }: { projectId: string; busy?: boolean }) {
-  return <AIPromptForm projectId={projectId} redirectTo={`/projects/${projectId}`} variant="cockpit" busy={busy} />
+function CockpitPromptForm({
+  projectId,
+  busy,
+  activeProvider,
+}: {
+  projectId: string
+  busy?: boolean
+  activeProvider: ActiveProviderInfo
+}) {
+  return <AIPromptForm projectId={projectId} redirectTo={`/projects/${projectId}`} variant="cockpit" busy={busy} activeProvider={activeProvider} />
 }
 
 const ACTION_DISPLAY: Record<

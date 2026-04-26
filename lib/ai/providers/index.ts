@@ -12,6 +12,8 @@ export type ProviderConfig = {
   label: string
   /** AI Gateway model string, e.g. "openai/gpt-5-mini" */
   model: string
+  /** Human-friendly model name for UI surfaces, e.g. "GPT-5 Mini" */
+  modelDisplayName: string
 }
 
 export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
@@ -19,11 +21,13 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     id: "openai",
     label: "OpenAI",
     model: "openai/gpt-5-mini",
+    modelDisplayName: "GPT-5 Mini",
   },
   anthropic: {
     id: "anthropic",
     label: "Anthropic",
     model: "anthropic/claude-opus-4.6",
+    modelDisplayName: "Claude Opus 4.6",
   },
 }
 
@@ -48,4 +52,13 @@ export function getActiveProvider(): ProviderConfig {
 export function getProvider(id?: ProviderId | null): ProviderConfig {
   if (id && id in PROVIDERS) return PROVIDERS[id]
   return getActiveProvider()
+}
+
+export type ProviderOption = { id: ProviderId; label: string }
+
+export function getProviderOptions(): ProviderOption[] {
+  return (Object.keys(PROVIDERS) as ProviderId[]).map((id) => {
+    const provider = PROVIDERS[id]
+    return { id, label: `${provider.label} (${provider.modelDisplayName})` }
+  })
 }
