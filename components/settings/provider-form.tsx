@@ -52,7 +52,7 @@ export function ProviderForm({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-2">
-        <Label htmlFor="ai-provider">Default AI Provider</Label>
+        <Label htmlFor="ai-provider">Default provider</Label>
         <Select
           value={selected}
           onValueChange={(v) => setSelected(v as ProviderId)}
@@ -70,8 +70,10 @@ export function ProviderForm({
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          This controls which model is used when you create new AI tasks.
-          Credentials are read from server environment variables.
+          Choose which server-configured provider UDD should use. Credentials
+          are managed by the server environment. UDD does not accept or store
+          API keys yet. If the selected provider is not configured on the
+          server, work items may fail.
         </p>
       </div>
       <div className="flex items-center gap-3">

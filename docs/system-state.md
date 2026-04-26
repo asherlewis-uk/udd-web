@@ -174,13 +174,15 @@ Two AI providers are defined in the single `PROVIDERS` registry: `openai` (`open
 
 ### User surfaces
 
+User-facing provider selection exists in Settings and the cockpit. Settings labels this surface as “Provider selection” / “Default provider” and says: “Choose which server-configured provider UDD should use.” (app/(app)/settings/page.tsx:58–61, components/settings/provider-form.tsx:55, 72–76)
+
 Settings and the cockpit switcher both write through `saveAIProviderConfig`; the save action semantics are unchanged. (components/settings/provider-form.tsx:14–16, 38–43; components/ai/provider-switcher.tsx:13–16, 45; app/actions/provider-configs.ts:46–110)
 
-The cockpit page resolves the active provider server-side and passes it to `AIPromptForm`, which renders provider selection copy stating that selection only chooses the provider, credentials come from the server environment, UDD does not accept or store API keys, and tasks fail if the environment is not configured for the selected provider. (app/(app)/projects/[id]/page.tsx:99–105, 165, 296–305; components/ai/ai-prompt-form.tsx:102–109)
+The cockpit page resolves the active provider server-side and passes it to `AIPromptForm`, which renders provider selection copy stating that selection only chooses the provider, credentials come from the server environment, UDD does not accept or store API keys, and tasks fail if the environment is not configured for the selected provider. (app/(app)/projects/[id]/page.tsx:99–105, 165, 296–305; components/ai/ai-prompt-form.tsx:108–122)
 
 ### Credential handling — env-managed only
 
-No API key input exists in the provider surfaces. No code path reads user credentials. `saveAIProviderConfig` rejects secret-shaped metadata keys/values and every upsert writes `secret_ref: null`. (app/actions/provider-configs.ts:13–30, 82)
+BYOK is not implemented. No API key input exists in the provider surfaces. No user API keys are accepted or stored. Credentials remain server-environment-managed, and selecting a provider does not prove that provider is usable unless the server environment is configured for it. `saveAIProviderConfig` rejects secret-shaped metadata keys/values and every upsert writes `secret_ref: null`; `provider_configs.secret_ref` remains unused/null. (components/settings/provider-form.tsx:72–76, components/ai/ai-prompt-form.tsx:119–122, app/actions/provider-configs.ts:13–30, 61–82, scripts/004_document_forward_looking.sql:10–13)
 
 ---
 

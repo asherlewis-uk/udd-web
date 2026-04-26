@@ -56,7 +56,7 @@ export default async function SettingsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold tracking-tight">AI Provider</h2>
+        <h2 className="text-sm font-semibold tracking-tight">Provider selection</h2>
         <div className="rounded-lg border border-border bg-card p-6">
           <ProviderForm currentProviderId={currentProviderId} />
         </div>
