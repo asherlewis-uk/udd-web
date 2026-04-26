@@ -40,33 +40,44 @@ export function AIPromptForm({
 }) {
   const [state, formAction, pending] = useActionState<State, FormData>(action, { error: null })
   const formRef = useRef<HTMLFormElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const cockpit = variant === "cockpit"
+
+  const handleAutoResize = (e: React.FormEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget
+    el.style.height = "auto"
+    el.style.height = `${el.scrollHeight}px`
+  }
 
   return (
     <form
       ref={formRef}
       action={formAction}
       className={cn(
-        "flex flex-col gap-3 rounded-lg border border-border bg-card",
-        cockpit ? "p-5" : "p-4",
+        "flex flex-col gap-3",
+        cockpit ? "w-full" : "rounded-lg border border-border bg-card p-4",
       )}
     >
       <input type="hidden" name="project_id" value={projectId} />
       {redirectTo ? <input type="hidden" name="redirect_to" value={redirectTo} /> : null}
       <Textarea
+        ref={textareaRef}
         name="prompt"
         placeholder={
           cockpit
             ? "Describe the next work item..."
             : "Describe a change. e.g. Scaffold a landing page with a hero and a CTA."
         }
-        rows={cockpit ? 10 : 3}
+        rows={cockpit ? 4 : 3}
         required
         disabled={pending}
         className={cn(
-          "resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0",
-          cockpit ? "min-h-64 text-base leading-relaxed md:text-base" : "text-sm",
+          "resize-none shadow-none",
+          cockpit
+            ? "min-h-[120px] max-h-64 rounded-lg border-border bg-background px-5 py-4 text-base leading-7 transition-[box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-foreground/20 md:text-base"
+            : "border-0 bg-transparent p-0 text-sm focus-visible:ring-0",
         )}
+        onInput={cockpit ? handleAutoResize : undefined}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
             e.preventDefault()

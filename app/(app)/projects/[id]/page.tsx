@@ -10,20 +10,22 @@ import {
   FileText,
   FolderTree,
   MessageSquareText,
+  Play,
+  Settings2,
   ShieldCheck,
+  Terminal,
   TriangleAlert,
 } from "lucide-react"
 import { AIPromptForm } from "@/components/ai/ai-prompt-form"
+import { AIStatusBadge } from "@/components/ai/ai-status-badge"
 import { TaskPoller } from "@/components/ai/task-poller"
 import { RunPoller } from "@/components/run/run-poller"
 import { Button } from "@/components/ui/button"
-import { WorkspaceContainer } from "@/components/workspace/workspace-container"
-import { startRunAction } from "@/app/actions/run"
 import { createClient } from "@/lib/supabase/server"
 import { formatRelative } from "@/lib/slug"
 import { cn } from "@/lib/utils"
 import { deriveNextAction } from "@/lib/workspace/next-action"
-import type { Project } from "@/lib/types"
+import type { Project, RunStatus } from "@/lib/types"
 import type { AITaskEventPayload } from "@/lib/ai/types"
 import type { AITask, NextAction, RunSession, ValidationSummary } from "@/lib/workspace/next-action"
 
@@ -139,19 +141,25 @@ export default async function WorkspacePage({
   })
 
   return (
-    <WorkspaceContainer className="gap-5 lg:py-8">
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.85fr)_minmax(19rem,1fr)] lg:items-start">
-        <AgentCockpitPanel
-          project={project}
-          projectId={id}
-          latestTask={latestTask}
-          latestPrompt={extractPrompt(latestTask)}
-          validationSummary={validationSummary}
-          nextAction={nextAction}
-          latestRunSession={latestRunSession}
-        />
+    <div className="flex flex-1 h-full overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto scroll-smooth px-6 py-6 space-y-2">
+          <ConversationStream
+            project={project}
+            latestTask={latestTask}
+            latestPrompt={extractPrompt(latestTask)}
+          />
+        </div>
 
-        <OutputPanel
+        <div className="flex-none flex flex-col gap-2 px-6 pb-6 pt-5">
+          <AssistantMessageBubble action={nextAction} />
+          <CockpitPromptForm projectId={id} />
+        </div>
+      </div>
+
+      <div className="hidden lg:flex w-[38%] shrink-0 border-l flex-col overflow-y-auto">
+        <ContextSurface
+          project={project}
           files={savedFiles}
           filesCount={count}
           validationSummary={validationSummary}
@@ -161,64 +169,71 @@ export default async function WorkspacePage({
 
       <TaskPoller active={taskInFlight} />
       <RunPoller active={runInFlight} />
-    </WorkspaceContainer>
+    </div>
   )
 }
 
-function AgentCockpitPanel({
+function ConversationStream({
   project,
-  projectId,
   latestTask,
   latestPrompt,
-  validationSummary,
-  nextAction,
-  latestRunSession,
 }: {
   project: Project
-  projectId: string
   latestTask: LatestTask | null
   latestPrompt: string | null
-  validationSummary: ValidationSummary | null
-  nextAction: NextAction
-  latestRunSession: LatestRunSession | null
 }) {
   const intent = project.idea || project.description
 
   return (
-    <section className="flex min-h-[40rem] flex-col overflow-hidden rounded-lg border border-border bg-card">
-      <div className="border-b border-border bg-background/40 px-5 py-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              Agent cockpit
+    <>
+      {intent ? (
+        <ChatMessage role="user">
+          <p className="text-sm leading-relaxed">{intent}</p>
+        </ChatMessage>
+      ) : null}
+
+      {latestPrompt ? (
+        <ChatMessage role="user">
+          <p className="text-sm leading-relaxed">{latestPrompt}</p>
+        </ChatMessage>
+      ) : null}
+
+      {latestTask ? (
+        <ChatMessage role="assistant">
+          <div className="flex flex-wrap items-center gap-2">
+            <WorkItemStatusBadge status={latestTask.status} />
+            <span className="text-xs text-muted-foreground">
+              {latestTask.finished_at
+                ? `Updated ${formatRelative(latestTask.finished_at)}`
+                : `Queued ${formatRelative(latestTask.created_at)}`}
             </span>
-            <h2 className="mt-2 text-lg font-semibold tracking-tight">
-              What should UDD change next?
-            </h2>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              UDD can check files, but does not run or preview the app yet.
-            </p>
           </div>
-          {latestTask ? <WorkItemStatusBadge status={latestTask.status} /> : null}
-        </div>
-      </div>
+          <p className="mt-2 text-sm leading-relaxed">{latestTask.title}</p>
+          {latestTask.status === "failed" && latestTask.error ? (
+            <p className="mt-2 text-sm text-destructive">{latestTask.error}</p>
+          ) : null}
+        </ChatMessage>
+      ) : null}
+    </>
+  )
+}
 
-      <div className="flex flex-1 flex-col gap-4 px-5 py-5">
-        {intent ? <IntentNote intent={intent} /> : null}
-        {latestPrompt ? <UserPromptMessage prompt={latestPrompt} /> : null}
-        <AssistantNextAction
-          action={nextAction}
-          projectId={projectId}
-          latestTask={latestTask}
-          validationSummary={validationSummary}
-          latestRunSession={latestRunSession}
-        />
-      </div>
+function ChatMessage({ role, children }: { role: "assistant" | "user"; children: ReactNode }) {
+  const isUser = role === "user"
 
-      <div className="border-t border-border bg-background/30 p-5">
-        <AIPromptForm projectId={projectId} redirectTo={`/projects/${projectId}`} variant="cockpit" />
+  return (
+    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+      <div
+        className={cn(
+          "max-w-[78%]",
+          isUser
+            ? "rounded-lg rounded-tr-sm bg-primary px-4 py-3 text-primary-foreground"
+            : "py-2 text-foreground",
+        )}
+      >
+        {children}
       </div>
-    </section>
+    </div>
   )
 }
 
@@ -232,42 +247,35 @@ function WorkItemStatusBadge({ status }: { status: LatestTask["status"] }) {
   }
   const tone =
     status === "completed"
-      ? "border-accent/40 bg-accent/10 text-accent"
+      ? "text-accent"
       : status === "failed"
-        ? "border-destructive/40 bg-destructive/10 text-destructive"
-        : "border-border bg-background text-muted-foreground"
+        ? "text-destructive"
+        : "text-muted-foreground"
 
   return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-xs font-medium capitalize",
-        tone,
-      )}
-    >
+    <span className={cn("text-xs font-medium capitalize", tone)}>
       {labels[status]}
     </span>
   )
 }
 
-function IntentNote({ intent }: { intent: string }) {
+function AssistantMessageBubble({ action }: { action: NextAction }) {
   return (
-    <div className="rounded-md border border-border/70 bg-background/50 px-3 py-2">
-      <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-        Current intent
-      </div>
-      <p className="mt-1 text-sm leading-relaxed text-foreground">{intent}</p>
+    <div className="flex items-baseline gap-2 py-1 text-sm text-muted-foreground/80">
+      <span className="leading-relaxed">{action.description}</span>
+      <Link
+        href={action.cta.href}
+        className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+      >
+        {action.cta.label}
+        <ArrowRight className="h-3 w-3" />
+      </Link>
     </div>
   )
 }
 
-function UserPromptMessage({ prompt }: { prompt: string }) {
-  return (
-    <div className="flex justify-end">
-      <div className="max-w-[86%] rounded-lg rounded-tr-sm bg-primary px-4 py-3 text-sm leading-relaxed text-primary-foreground">
-        {prompt}
-      </div>
-    </div>
-  )
+function CockpitPromptForm({ projectId }: { projectId: string }) {
+  return <AIPromptForm projectId={projectId} redirectTo={`/projects/${projectId}`} variant="cockpit" />
 }
 
 const ACTION_DISPLAY: Record<
@@ -354,116 +362,75 @@ function AssistantNextAction({
 
 function ValidationCheckForm({ projectId }: { projectId: string }) {
   return (
-    <form action={startRunAction} className="mt-4">
-      <input type="hidden" name="project_id" value={projectId} />
-      <Button type="submit" size="sm">
-        <ShieldCheck className="h-3.5 w-3.5" />
+    <Button asChild variant="outline" size="sm" className="mt-4">
+      <Link href={`/projects/${projectId}/run`}>
         Start validation check
-      </Button>
-    </form>
+        <ShieldCheck className="h-3.5 w-3.5" />
+      </Link>
+    </Button>
   )
 }
 
-function OutputPanel({
+function ContextSurface({
+  project,
   files,
   filesCount,
   validationSummary,
   latestRunSession,
 }: {
+  project: Project
   files: SavedFile[]
   filesCount: number
   validationSummary: ValidationSummary | null
   latestRunSession: LatestRunSession | null
 }) {
-  if (latestRunSession?.status === "starting" || latestRunSession?.status === "stopping") {
-    return <ValidationStatusOutput session={latestRunSession} />
-  }
-
-  if (latestRunSession?.status === "running" || latestRunSession?.status === "error") {
-    return <ValidationResultOutput session={latestRunSession} />
-  }
-
-  if (filesCount > 0) {
-    return <SavedFilesOutput files={files} filesCount={filesCount} />
+  if (latestRunSession?.status === "running") {
+    return <RunStatusView project={project} session={latestRunSession} />
   }
 
   if (validationSummary) {
-    return <ValidationSummaryOutput summary={validationSummary} />
+    return <ValidationSummaryView summary={validationSummary} />
   }
 
-  return <EmptyOutput />
+  if (filesCount > 0) {
+    return <FileSummaryView files={files} filesCount={filesCount} />
+  }
+
+  return <EmptyStateView />
 }
 
-function OutputShell({
-  eyebrow,
-  title,
-  children,
-  Icon,
-}: {
-  eyebrow: string
-  title: string
-  children: ReactNode
-  Icon: ComponentType<{ className?: string }>
-}) {
+function RunStatusView({ project, session }: { project: Project; session: LatestRunSession }) {
   return (
-    <aside className="rounded-lg border border-border bg-card p-4 lg:sticky lg:top-6">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">
-          <Icon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0">
-          <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            {eyebrow}
-          </div>
-          <h3 className="mt-1 text-sm font-semibold text-foreground">{title}</h3>
-        </div>
-      </div>
-      <div className="mt-4">{children}</div>
-    </aside>
-  )
-}
-
-function ValidationStatusOutput({ session }: { session: LatestRunSession }) {
-  const label = session.status === "starting" ? "Checking saved files" : "Finishing check"
-
-  return (
-    <OutputShell eyebrow="Validation check" title={label} Icon={Clock}>
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        UDD is checking file syntax and imports with a parser. UDD can check files, but
-        does not run or preview the app yet.
-      </p>
-      <p className="mt-3 text-xs text-muted-foreground">
-        Started {formatRelative(session.started_at)}
-      </p>
-    </OutputShell>
-  )
-}
-
-function ValidationResultOutput({ session }: { session: LatestRunSession }) {
-  const passed = session.status === "running"
-
-  return (
-    <OutputShell
-      eyebrow="Validation results"
-      title={passed ? "Validation check passed" : "Validation check needs attention"}
-      Icon={passed ? CheckCircle2 : CircleAlert}
-    >
-      <p className={cn("text-sm leading-relaxed", passed ? "text-muted-foreground" : "text-destructive")}>
-        {passed
-          ? "Saved files parsed cleanly in the latest validation check."
-          : "The latest validation check found parse errors. Inspect the details, then revise the prompt."}
+    <div className="flex min-h-full flex-col px-6 py-6 text-sm">
+      <p className="leading-relaxed text-muted-foreground">
+        Saved files for {project.name} parsed cleanly.
       </p>
       <p className="mt-3 text-xs text-muted-foreground">
         Checked {formatRelative(session.started_at)}
       </p>
-    </OutputShell>
+    </div>
   )
 }
 
-function SavedFilesOutput({ files, filesCount }: { files: SavedFile[]; filesCount: number }) {
+function ValidationSummaryView({ summary }: { summary: ValidationSummary }) {
   return (
-    <OutputShell eyebrow="Saved files" title={`${filesCount} saved file${filesCount === 1 ? "" : "s"}`} Icon={FolderTree}>
-      <div className="flex flex-col divide-y divide-border/70">
+    <div className="flex min-h-full flex-col px-6 py-6 text-sm">
+      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+        <span>{summary.blocking_count} blocking</span>
+        <span>{summary.warning_count} warning{summary.warning_count === 1 ? "" : "s"}</span>
+        <span>{summary.info_count} info</span>
+      </div>
+      {summary.message ? (
+        <p className="mt-4 leading-relaxed text-muted-foreground">{summary.message}</p>
+      ) : null}
+    </div>
+  )
+}
+
+function FileSummaryView({ files, filesCount }: { files: SavedFile[]; filesCount: number }) {
+  return (
+    <div className="flex min-h-full flex-col px-6 py-6 text-sm">
+      <div className="flex flex-col divide-y divide-border/60">
         {files.map((file) => (
           <div key={file.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
             <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
@@ -482,32 +449,330 @@ function SavedFilesOutput({ files, filesCount }: { files: SavedFile[]; filesCoun
           Showing the most recently updated {files.length} saved files.
         </p>
       ) : null}
-    </OutputShell>
+    </div>
   )
 }
 
-function ValidationSummaryOutput({ summary }: { summary: ValidationSummary }) {
+function EmptyStateView() {
   return (
-    <OutputShell eyebrow="Validation results" title="Latest validation check" Icon={ShieldCheck}>
-      <ValidationSummaryInline summary={summary} />
-      {summary.message ? (
-        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{summary.message}</p>
+    <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+      No activity yet
+    </div>
+  )
+}
+
+function IntentPanel({ project, projectId }: { project: Project; projectId: string }) {
+  const intent = project.idea || project.description
+  return (
+    <div className="rounded-lg border border-border bg-card p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Project intent
+          </span>
+          {intent ? (
+            <p className="text-sm leading-relaxed text-foreground">{intent}</p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <p className="text-sm text-muted-foreground">No intent recorded yet.</p>
+              <Link
+                href={`/projects/${projectId}/settings`}
+                className="text-xs text-accent transition hover:underline"
+              >
+                Add a description in Settings
+              </Link>
+            </div>
+          )}
+        </div>
+        <Button asChild size="sm">
+          <Link href={`/projects/${projectId}/ai`}>
+            Submit prompt
+            <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+          </Link>
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AgentStatePanel({
+  latestTask,
+  validationSummary,
+  projectId,
+}: {
+  latestTask: AITask | null
+  validationSummary: ValidationSummary | null
+  projectId: string
+}) {
+  if (!latestTask) {
+    return (
+      <div className="rounded-lg border border-border bg-card p-5">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Agent state
+        </span>
+        <p className="mt-3 text-sm text-muted-foreground">
+          No work items yet. Submit a prompt above to start generating files.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5">
+      <div className="flex items-start justify-between gap-3">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Agent state
+        </span>
+        <AIStatusBadge status={latestTask.status} />
+      </div>
+
+      <div className="mt-3 flex flex-col gap-1.5">
+        <p className="text-sm font-medium text-foreground">{latestTask.title}</p>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-mono uppercase tracking-wider">{latestTask.kind}</span>
+          {" · "}
+          {latestTask.finished_at
+            ? `Finished ${formatRelative(latestTask.finished_at)}`
+            : `Queued ${formatRelative(latestTask.created_at)}`}
+        </p>
+        {latestTask.status === "failed" && latestTask.error ? (
+          <p className="mt-1 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {latestTask.error}
+          </p>
+        ) : null}
+      </div>
+
+      {validationSummary ? (
+        <div className="mt-4 border-t border-border pt-4">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Static validation
+          </span>
+          <div className="mt-2">
+            <ValidationSummaryRow summary={validationSummary} />
+          </div>
+        </div>
       ) : null}
-    </OutputShell>
+
+      <div className="mt-4">
+        <Link
+          href={`/projects/${projectId}/ai`}
+          className="text-xs text-muted-foreground transition hover:text-foreground"
+        >
+          View full work item detail
+        </Link>
+      </div>
+    </div>
   )
 }
 
-function EmptyOutput() {
+function ValidationSummaryRow({ summary }: { summary: ValidationSummary }) {
+  if (summary.blocking_count === 0 && summary.warning_count === 0) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs text-accent">
+        <ShieldCheck className="h-3.5 w-3.5" />
+        No blocking issues
+      </span>
+    )
+  }
   return (
-    <OutputShell eyebrow="Output" title="Nothing saved yet" Icon={FolderTree}>
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        Describe a work item in the cockpit. Proof appears here only after UDD has
-        saved files or produced validation results.
-      </p>
-      <p className="mt-3 text-xs text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-3 text-xs">
+      {summary.blocking_count > 0 ? (
+        <span className="inline-flex items-center gap-1.5 text-destructive">
+          <CircleAlert className="h-3.5 w-3.5" />
+          {summary.blocking_count} blocking
+        </span>
+      ) : null}
+      {summary.warning_count > 0 ? (
+        <span className="inline-flex items-center gap-1.5 text-foreground/70">
+          <TriangleAlert className="h-3.5 w-3.5" />
+          {summary.warning_count} warning{summary.warning_count === 1 ? "" : "s"}
+        </span>
+      ) : null}
+      {summary.info_count > 0 ? (
+        <span className="text-muted-foreground">{summary.info_count} info</span>
+      ) : null}
+    </div>
+  )
+}
+
+function ProofPanel({
+  filesCount,
+  latestFileUpdated,
+  latestRunSession,
+  projectId,
+}: {
+  filesCount: number
+  latestFileUpdated: string | null
+  latestRunSession: RunSession | null
+  projectId: string
+}) {
+  const RUN_LABELS: Partial<Record<RunStatus, string>> = {
+    starting: "Validating",
+    running: "Files validated",
+    stopping: "Stopping",
+    stopped: "Stopped",
+    error: "Parse errors found",
+  }
+
+  const runLabel = latestRunSession
+    ? (RUN_LABELS[latestRunSession.status] ?? latestRunSession.status)
+    : "No validation check yet"
+  const runClass =
+    latestRunSession?.status === "running"
+      ? "text-accent"
+      : latestRunSession?.status === "error"
+        ? "text-destructive"
+        : "text-foreground"
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-5">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Proof
+      </span>
+      <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3">
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-xs text-muted-foreground">Saved files</dt>
+          <dd className={cn("tabular-nums", filesCount > 0 ? "font-semibold" : "text-muted-foreground")}>
+            {filesCount > 0 ? filesCount : "None"}
+          </dd>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-xs text-muted-foreground">Last file update</dt>
+          <dd className="text-foreground">{formatRelative(latestFileUpdated)}</dd>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <dt className="text-xs text-muted-foreground">Validation check</dt>
+          <dd className={cn("text-sm", runClass)}>{runLabel}</dd>
+        </div>
+      </dl>
+      <p className="mt-4 text-[11px] text-muted-foreground">
         UDD can check files, but does not run or preview the app yet.
       </p>
-    </OutputShell>
+      <div className="mt-3 flex flex-wrap gap-4">
+        <Link
+          href={`/projects/${projectId}/files`}
+          className="text-xs text-muted-foreground transition hover:text-foreground"
+        >
+          Browse files
+        </Link>
+        <Link
+          href={`/projects/${projectId}/run`}
+          className="text-xs text-muted-foreground transition hover:text-foreground"
+        >
+          View validation check
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+const LEGACY_STATE_DISPLAY: Record<
+  NextAction["state"],
+  {
+    variant: "default" | "secondary" | "outline"
+    Icon: ComponentType<{ className?: string }>
+  }
+> = {
+  idle: { variant: "default", Icon: Bot },
+  in_progress: { variant: "secondary", Icon: Clock },
+  blocked: { variant: "default", Icon: CircleAlert },
+  ready: { variant: "default", Icon: CheckCircle2 },
+}
+
+function NextActionPanel({ action }: { action: NextAction }) {
+  const { variant, Icon } = LEGACY_STATE_DISPLAY[action.state]
+  return (
+    <div className="flex flex-col justify-between gap-6 rounded-lg border border-border bg-card p-5">
+      <div className="flex flex-col gap-3">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          Recommended action
+        </span>
+        <Icon className="h-5 w-5 text-muted-foreground" />
+        <div className="flex flex-col gap-1.5">
+          <p className="text-sm font-medium text-foreground">{action.label}</p>
+          <p className="text-xs leading-relaxed text-muted-foreground">{action.description}</p>
+        </div>
+      </div>
+      <Button asChild variant={variant} size="sm" className="w-full">
+        <Link href={action.cta.href}>{action.cta.label}</Link>
+      </Button>
+    </div>
+  )
+}
+
+function DetailLinks({
+  projectId,
+  filesCount,
+  latestTask,
+  latestRunSession,
+}: {
+  projectId: string
+  filesCount: number
+  latestTask: AITask | null
+  latestRunSession: RunSession | null
+}) {
+  const links = [
+    {
+      href: `/projects/${projectId}/ai`,
+      Icon: Bot,
+      label: "AI",
+      meta: latestTask ? `Last work item: ${latestTask.status}` : "No work items yet",
+    },
+    {
+      href: `/projects/${projectId}/files`,
+      Icon: FolderTree,
+      label: "Files",
+      meta:
+        filesCount > 0
+          ? `${filesCount} saved file${filesCount === 1 ? "" : "s"}`
+          : "No files yet",
+    },
+    {
+      href: `/projects/${projectId}/run`,
+      Icon: Play,
+      label: "Run",
+      meta: latestRunSession
+        ? `Last validation check: ${latestRunSession.status}`
+        : "Validation-only",
+    },
+    {
+      href: `/projects/${projectId}/logs`,
+      Icon: Terminal,
+      label: "Logs",
+      meta: "Session event log",
+    },
+    {
+      href: `/projects/${projectId}/settings`,
+      Icon: Settings2,
+      label: "Settings",
+      meta: "Name, idea, danger zone",
+    },
+  ]
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="px-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+        Detail views
+      </span>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {links.map(({ href, Icon, label, meta }) => (
+          <Link
+            key={label}
+            href={href}
+            className="group flex flex-col gap-3 rounded-lg border border-border bg-card p-4 transition hover:border-border/80 hover:bg-card/80"
+          >
+            <div className="flex items-center justify-between">
+              <Icon className="h-4 w-4 text-muted-foreground" />
+              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground transition group-hover:text-foreground" />
+            </div>
+            <div>
+              <div className="text-sm font-medium">{label}</div>
+              <div className="text-xs text-muted-foreground">{meta}</div>
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
   )
 }
 
