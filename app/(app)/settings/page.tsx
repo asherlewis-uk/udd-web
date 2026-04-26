@@ -1,27 +1,27 @@
-import { redirect } from "next/navigation"
-import { AccountForm } from "@/components/settings/account-form"
-import { ProviderForm } from "@/components/settings/provider-form"
-import { Button } from "@/components/ui/button"
-import { createClient } from "@/lib/supabase/server"
-import { isProviderId, type ProviderId } from "@/lib/ai/providers"
-import { LogOut } from "lucide-react"
+import { redirect } from "next/navigation";
+import { AccountForm } from "@/components/settings/account-form";
+import { ProviderForm } from "@/components/settings/provider-form";
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/server";
+import { isProviderId, type ProviderId } from "@/lib/ai/providers";
+import { LogOut } from "lucide-react";
 
 export const metadata = {
   title: "Settings — UDD",
-}
+};
 
 export default async function SettingsPage() {
-  const supabase = await createClient()
+  const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
+  } = await supabase.auth.getUser();
+  if (!user) redirect("/auth/login");
 
   const { data: profile } = await supabase
     .from("profiles")
     .select("display_name")
     .eq("id", user.id)
-    .maybeSingle()
+    .maybeSingle();
 
   // Load the user's saved default AI provider (if any). The Select widget
   // falls back to "openai" when nothing is saved so the UI always has a
@@ -33,11 +33,13 @@ export default async function SettingsPage() {
     .eq("kind", "ai")
     .eq("is_default", true)
     .limit(1)
-    .maybeSingle()
+    .maybeSingle();
 
-  const currentProviderId: ProviderId | null = isProviderId(defaultProvider?.name)
+  const currentProviderId: ProviderId | null = isProviderId(
+    defaultProvider?.name,
+  )
     ? defaultProvider.name
-    : null
+    : null;
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-5 py-8">
@@ -51,12 +53,17 @@ export default async function SettingsPage() {
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold tracking-tight">Profile</h2>
         <div className="rounded-lg border border-border bg-card p-6">
-          <AccountForm email={user.email ?? ""} initialDisplayName={profile?.display_name ?? ""} />
+          <AccountForm
+            email={user.email ?? ""}
+            initialDisplayName={profile?.display_name ?? ""}
+          />
         </div>
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold tracking-tight">Provider selection</h2>
+        <h2 className="text-sm font-semibold tracking-tight">
+          Provider selection
+        </h2>
         <div className="rounded-lg border border-border bg-card p-6">
           <ProviderForm currentProviderId={currentProviderId} />
         </div>
@@ -80,5 +87,5 @@ export default async function SettingsPage() {
         </div>
       </section>
     </main>
-  )
+  );
 }
