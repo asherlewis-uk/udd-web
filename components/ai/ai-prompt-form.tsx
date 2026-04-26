@@ -1,6 +1,7 @@
 "use client"
 
 import { useActionState, useRef } from "react"
+import Link from "next/link"
 import { ArrowRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -33,15 +34,18 @@ export function AIPromptForm({
   projectId,
   redirectTo,
   variant = "default",
+  busy,
 }: {
   projectId: string
   redirectTo?: string
   variant?: "default" | "cockpit"
+  busy?: boolean
 }) {
   const [state, formAction, pending] = useActionState<State, FormData>(action, { error: null })
   const formRef = useRef<HTMLFormElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const cockpit = variant === "cockpit"
+  const isDisabled = pending || !!busy
 
   const handleAutoResize = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget
@@ -70,7 +74,7 @@ export function AIPromptForm({
         }
         rows={cockpit ? 4 : 3}
         required
-        disabled={pending}
+        disabled={isDisabled}
         className={cn(
           "resize-none shadow-none",
           cockpit
@@ -88,7 +92,7 @@ export function AIPromptForm({
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           {cockpit ? (
-            "UDD saves files only after validation passes."
+            busy ? "UDD is working…" : "UDD saves files only after validation passes."
           ) : (
             <>
               Work item lifecycle —{" "}
@@ -100,9 +104,12 @@ export function AIPromptForm({
           {state.error ? (
             <span className="text-xs text-destructive" role="alert">
               {state.error}
+              {cockpit && state.error.includes("work items in progress") ? (
+                <>{" "}<Link href={`/projects/${projectId}/ai`} className="underline hover:opacity-80">Manage work items</Link></>
+              ) : null}
             </span>
           ) : null}
-          <Button type="submit" size="sm" disabled={pending} className="gap-1.5">
+          <Button type="submit" size="sm" disabled={isDisabled} className="gap-1.5">
             {pending ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

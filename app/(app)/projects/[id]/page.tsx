@@ -21,6 +21,7 @@ import { AIStatusBadge } from "@/components/ai/ai-status-badge"
 import { TaskPoller } from "@/components/ai/task-poller"
 import { RunPoller } from "@/components/run/run-poller"
 import { Button } from "@/components/ui/button"
+import { startRunAction } from "@/app/actions/run"
 import { createClient } from "@/lib/supabase/server"
 import { formatRelative } from "@/lib/slug"
 import { cn } from "@/lib/utils"
@@ -145,15 +146,14 @@ export default async function WorkspacePage({
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto scroll-smooth px-6 py-6 space-y-2">
           <ConversationStream
-            project={project}
             latestTask={latestTask}
             latestPrompt={extractPrompt(latestTask)}
           />
         </div>
 
         <div className="flex-none flex flex-col gap-2 px-6 pb-6 pt-5">
-          <AssistantMessageBubble action={nextAction} />
-          <CockpitPromptForm projectId={id} />
+          <AssistantMessageBubble action={nextAction} projectId={id} />
+          <CockpitPromptForm projectId={id} busy={taskInFlight} />
         </div>
       </div>
 
@@ -164,6 +164,7 @@ export default async function WorkspacePage({
           filesCount={count}
           validationSummary={validationSummary}
           latestRunSession={latestRunSession}
+          latestTask={latestTask}
         />
       </div>
 
@@ -174,24 +175,14 @@ export default async function WorkspacePage({
 }
 
 function ConversationStream({
-  project,
   latestTask,
   latestPrompt,
 }: {
-  project: Project
   latestTask: LatestTask | null
   latestPrompt: string | null
 }) {
-  const intent = project.idea || project.description
-
   return (
     <>
-      {intent ? (
-        <ChatMessage role="user">
-          <p className="text-sm leading-relaxed">{intent}</p>
-        </ChatMessage>
-      ) : null}
-
       {latestPrompt ? (
         <ChatMessage role="user">
           <p className="text-sm leading-relaxed">{latestPrompt}</p>
@@ -259,23 +250,42 @@ function WorkItemStatusBadge({ status }: { status: LatestTask["status"] }) {
   )
 }
 
-function AssistantMessageBubble({ action }: { action: NextAction }) {
+function AssistantMessageBubble({ action, projectId }: { action: NextAction; projectId: string }) {
+  const aiHref = `/projects/${projectId}/ai`
+  // Suppress CTAs that point back to the cockpit's own input surface.
+  const isLocalAction =
+    action.cta.href === aiHref || action.cta.href === `/projects/${projectId}`
+  const isValidationStart = action.cta.label === "Start validation check"
+
   return (
     <div className="flex items-baseline gap-2 py-1 text-sm text-muted-foreground/80">
       <span className="leading-relaxed">{action.description}</span>
-      <Link
-        href={action.cta.href}
-        className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
-      >
-        {action.cta.label}
-        <ArrowRight className="h-3 w-3" />
-      </Link>
+      {isValidationStart ? (
+        <form action={startRunAction} className="contents">
+          <input type="hidden" name="project_id" value={projectId} />
+          <button
+            type="submit"
+            className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            Start validation check
+            <ArrowRight className="h-3 w-3" />
+          </button>
+        </form>
+      ) : !isLocalAction ? (
+        <Link
+          href={action.cta.href}
+          className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+        >
+          {action.cta.label}
+          <ArrowRight className="h-3 w-3" />
+        </Link>
+      ) : null}
     </div>
   )
 }
 
-function CockpitPromptForm({ projectId }: { projectId: string }) {
-  return <AIPromptForm projectId={projectId} redirectTo={`/projects/${projectId}`} variant="cockpit" />
+function CockpitPromptForm({ projectId, busy }: { projectId: string; busy?: boolean }) {
+  return <AIPromptForm projectId={projectId} redirectTo={`/projects/${projectId}`} variant="cockpit" busy={busy} />
 }
 
 const ACTION_DISPLAY: Record<
@@ -377,15 +387,26 @@ function ContextSurface({
   filesCount,
   validationSummary,
   latestRunSession,
+  latestTask,
 }: {
   project: Project
   files: SavedFile[]
   filesCount: number
   validationSummary: ValidationSummary | null
   latestRunSession: LatestRunSession | null
+  latestTask: LatestTask | null
 }) {
-  if (latestRunSession?.status === "running") {
-    return <RunStatusView project={project} session={latestRunSession} />
+  const runActive =
+    latestRunSession?.status === "running" ||
+    latestRunSession?.status === "starting" ||
+    latestRunSession?.status === "stopping"
+
+  if (runActive) {
+    return <RunStatusView project={project} session={latestRunSession!} />
+  }
+
+  if (latestTask?.status === "pending" || latestTask?.status === "running") {
+    return <WorkingStateView />
   }
 
   if (validationSummary) {
@@ -400,14 +421,21 @@ function ContextSurface({
 }
 
 function RunStatusView({ project, session }: { project: Project; session: LatestRunSession }) {
+  const isActive = session.status === "starting" || session.status === "stopping"
   return (
     <div className="flex min-h-full flex-col px-6 py-6 text-sm">
-      <p className="leading-relaxed text-muted-foreground">
-        Saved files for {project.name} parsed cleanly.
-      </p>
-      <p className="mt-3 text-xs text-muted-foreground">
-        Checked {formatRelative(session.started_at)}
-      </p>
+      {isActive ? (
+        <p className="leading-relaxed text-muted-foreground">Validating saved files…</p>
+      ) : (
+        <>
+          <p className="leading-relaxed text-muted-foreground">
+            Saved files for {project.name} parsed cleanly.
+          </p>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Checked {formatRelative(session.started_at)}
+          </p>
+        </>
+      )}
     </div>
   )
 }
@@ -449,6 +477,15 @@ function FileSummaryView({ files, filesCount }: { files: SavedFile[]; filesCount
           Showing the most recently updated {files.length} saved files.
         </p>
       ) : null}
+    </div>
+  )
+}
+
+function WorkingStateView() {
+  return (
+    <div className="flex min-h-full flex-col justify-center px-6 py-6 text-sm">
+      <p className="text-muted-foreground">Working…</p>
+      <p className="mt-1 text-xs text-muted-foreground/70">UDD is drafting saved files.</p>
     </div>
   )
 }
