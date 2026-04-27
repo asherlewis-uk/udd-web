@@ -161,7 +161,9 @@ export function AIPromptForm({
             <span
               className={cn(
                 "font-medium",
-                providerReady ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+                providerReady
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-destructive",
               )}
             >
               {providerReady ? "Ready" : "Credential needed"}
@@ -220,7 +222,9 @@ export function AIPromptForm({
           <Button
             type="submit"
             size="sm"
-            disabled={isDisabled || (cockpit && activeProvider ? !providerReady : false)}
+            disabled={
+              isDisabled || (cockpit && activeProvider ? !providerReady : false)
+            }
             className="gap-1.5"
           >
             {pending ? (

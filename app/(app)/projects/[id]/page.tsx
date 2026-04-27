@@ -192,17 +192,15 @@ export default async function WorkspacePage({
     ? extractValidationSummary(taskEventsByTaskId.get(latestTask.id) ?? [])
     : null;
 
-  const taskInFlight =
-    recentTasks.some(
-      (task) => task.status === "pending" || task.status === "running",
-    );
-  const runInFlight =
-    recentRunSessions.some(
-      (session) =>
-        session.status === "starting" ||
-        session.status === "running" ||
-        session.status === "stopping",
-    );
+  const taskInFlight = recentTasks.some(
+    (task) => task.status === "pending" || task.status === "running",
+  );
+  const runInFlight = recentRunSessions.some(
+    (session) =>
+      session.status === "starting" ||
+      session.status === "running" ||
+      session.status === "stopping",
+  );
 
   const nextAction = deriveNextAction({
     project,
@@ -376,18 +374,20 @@ function TaskConversationSummary({
       {output && task.status === "failed" ? (
         <ConversationFact label="Generated output">
           {output.files.length} generated file
-          {output.files.length === 1 ? "" : "s"} recorded for diagnostics;
-          the task did not complete, so this result is not presented as saved.
+          {output.files.length === 1 ? "" : "s"} recorded for diagnostics; the
+          task did not complete, so this result is not presented as saved.
         </ConversationFact>
       ) : null}
 
       {validationSummary ? (
         <ConversationFact label="Validation">
           {validationSummary.message || "Validation recorded."}
-          {validationSummary.blocking_count || validationSummary.warning_count ? (
+          {validationSummary.blocking_count ||
+          validationSummary.warning_count ? (
             <span className="text-muted-foreground">
               {" "}
-              ({validationSummary.blocking_count} blocking, {validationSummary.warning_count} warning
+              ({validationSummary.blocking_count} blocking,{" "}
+              {validationSummary.warning_count} warning
               {validationSummary.warning_count === 1 ? "" : "s"})
             </span>
           ) : null}
@@ -408,7 +408,8 @@ function TaskConversationSummary({
 
       {task.status === "failed" || task.status === "cancelled" ? (
         <ConversationFact label="Recovery">
-          Review the recorded work item before retrying or starting a new prompt.
+          Review the recorded work item before retrying or starting a new
+          prompt.
         </ConversationFact>
       ) : null}
 

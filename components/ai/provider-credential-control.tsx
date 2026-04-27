@@ -61,7 +61,9 @@ export function ProviderCredentialControl({
         onStatusChange?.(providerId, true);
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to save credential.");
+        setError(
+          err instanceof Error ? err.message : "Failed to save credential.",
+        );
       }
     });
   };
@@ -78,25 +80,36 @@ export function ProviderCredentialControl({
         onStatusChange?.(providerId, false);
         router.refresh();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to delete credential.");
+        setError(
+          err instanceof Error ? err.message : "Failed to delete credential.",
+        );
       }
     });
   };
 
   return (
-    <div className={cn("flex flex-col gap-2", compact ? "text-[11px]" : "text-xs")}>
+    <div
+      className={cn("flex flex-col gap-2", compact ? "text-[11px]" : "text-xs")}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span
           className={cn(
             "inline-flex items-center gap-1.5 font-medium",
-            stored ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground",
+            stored
+              ? "text-emerald-600 dark:text-emerald-400"
+              : "text-muted-foreground",
           )}
         >
           <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
           {stored ? "BYOK ready" : "Credential missing"}
         </span>
         {!compact || !stored ? (
-          <div className={cn("flex min-w-0 items-center gap-2", compact ? "flex-1" : "w-full sm:w-auto")}>
+          <div
+            className={cn(
+              "flex min-w-0 items-center gap-2",
+              compact ? "flex-1" : "w-full sm:w-auto",
+            )}
+          >
             <Input
               type="password"
               value={apiKey}
@@ -105,7 +118,10 @@ export function ProviderCredentialControl({
               autoComplete="off"
               spellCheck={false}
               disabled={disabled || isPending}
-              className={cn("h-8", compact ? "min-w-44 flex-1 text-xs" : "w-full sm:w-72")}
+              className={cn(
+                "h-8",
+                compact ? "min-w-44 flex-1 text-xs" : "w-full sm:w-72",
+              )}
             />
             <Button
               type="button"
@@ -147,7 +163,9 @@ export function ProviderCredentialControl({
             : `No ${providerLabel} key is saved. Add one to use BYOK for this provider.`}
         </span>
       )}
-      {message ? <span className="text-muted-foreground">{message}</span> : null}
+      {message ? (
+        <span className="text-muted-foreground">{message}</span>
+      ) : null}
       {error ? (
         <span className="text-destructive" role="alert">
           {error}

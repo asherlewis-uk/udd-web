@@ -1,19 +1,19 @@
-"use client"
+"use client";
 
-import { useEffect, useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { saveAIProviderConfig } from "@/app/actions/provider-configs"
-import { getProviderOptions, type ProviderId } from "@/lib/ai/providers"
+} from "@/components/ui/select";
+import { saveAIProviderConfig } from "@/app/actions/provider-configs";
+import { getProviderOptions, type ProviderId } from "@/lib/ai/providers";
 
 // Single source of truth: lib/ai/providers/index.ts. Do not duplicate.
-const PROVIDER_OPTIONS = getProviderOptions()
+const PROVIDER_OPTIONS = getProviderOptions();
 
 /**
  * Inline provider switcher for the cockpit. Reuses the same server action
@@ -26,40 +26,40 @@ export function ProviderSwitcher({
   disabled,
   onProviderChange,
 }: {
-  currentProviderId: ProviderId
-  disabled?: boolean
-  onProviderChange?: (providerId: ProviderId) => void
+  currentProviderId: ProviderId;
+  disabled?: boolean;
+  onProviderChange?: (providerId: ProviderId) => void;
 }) {
-  const router = useRouter()
+  const router = useRouter();
   // Optimistic value so the trigger updates immediately while the action runs.
-  const [value, setValue] = useState<ProviderId>(currentProviderId)
-  const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
+  const [value, setValue] = useState<ProviderId>(currentProviderId);
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setValue(currentProviderId)
-  }, [currentProviderId])
+    setValue(currentProviderId);
+  }, [currentProviderId]);
 
   const handleChange = (next: string) => {
-    if (next === value) return
-    const previous = value
-    const nextId = next as ProviderId
-    setValue(nextId)
-    onProviderChange?.(nextId)
-    setError(null)
+    if (next === value) return;
+    const previous = value;
+    const nextId = next as ProviderId;
+    setValue(nextId);
+    onProviderChange?.(nextId);
+    setError(null);
     startTransition(async () => {
       try {
-        await saveAIProviderConfig({ providerId: nextId, setAsDefault: true })
+        await saveAIProviderConfig({ providerId: nextId, setAsDefault: true });
         // Refresh so server components (badge label, settings) re-read.
-        router.refresh()
+        router.refresh();
       } catch (err) {
         // Roll back optimistic state on failure.
-        setValue(previous)
-        onProviderChange?.(previous)
-        setError(err instanceof Error ? err.message : "Failed to save.")
+        setValue(previous);
+        onProviderChange?.(previous);
+        setError(err instanceof Error ? err.message : "Failed to save.");
       }
-    })
-  }
+    });
+  };
 
   return (
     <div className="flex flex-col gap-1">
@@ -89,5 +89,5 @@ export function ProviderSwitcher({
         </span>
       ) : null}
     </div>
-  )
+  );
 }

@@ -1,5 +1,5 @@
-import "server-only"
-import { createClient } from "@/lib/supabase/server"
+import "server-only";
+import { createClient } from "@/lib/supabase/server";
 import {
   getActiveProvider,
   getProvider,
@@ -7,10 +7,10 @@ import {
   PROVIDERS,
   type ProviderConfig,
   type ProviderId,
-} from "@/lib/ai/providers"
-import { getSecret, hasSecret } from "@/lib/secrets"
+} from "@/lib/ai/providers";
+import { getSecret, hasSecret } from "@/lib/secrets";
 
-type SupabaseClient = Awaited<ReturnType<typeof createClient>>
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 /**
  * Resolve the provider for a specific owner from provider_configs, with
@@ -20,7 +20,7 @@ export async function getActiveProviderForOwner(
   ownerId: string,
   supabase?: SupabaseClient,
 ): Promise<ProviderConfig> {
-  const db = supabase ?? (await createClient())
+  const db = supabase ?? (await createClient());
   const { data, error } = await db
     .from("provider_configs")
     .select("name")
@@ -29,22 +29,23 @@ export async function getActiveProviderForOwner(
     .eq("is_active", true)
     .eq("is_default", true)
     .limit(1)
-    .maybeSingle()
+    .maybeSingle();
 
   if (error) {
     console.log("[v0] getActiveProviderForOwner: provider lookup failed", {
       ownerId,
       error: error.message,
-    })
-    return getActiveProvider()
+    });
+    return getActiveProvider();
   }
 
-  const savedName = typeof data?.name === "string" ? data.name.toLowerCase() : undefined
+  const savedName =
+    typeof data?.name === "string" ? data.name.toLowerCase() : undefined;
   if (isProviderId(savedName)) {
-    return getProvider(savedName)
+    return getProvider(savedName);
   }
 
-  return getActiveProvider()
+  return getActiveProvider();
 }
 
 /**
@@ -56,19 +57,23 @@ export async function getCredentialForProvider(
   ownerId: string,
   providerId: string,
 ): Promise<string | null> {
-  return getSecret(ownerId, "ai_provider_key", providerId)
+  return getSecret(ownerId, "ai_provider_key", providerId);
 }
 
 export async function getProviderCredentialStatusesForOwner(
   ownerId: string,
 ): Promise<Record<ProviderId, boolean>> {
-  const result = {} as Record<ProviderId, boolean>
+  const result = {} as Record<ProviderId, boolean>;
   for (const providerId of Object.keys(PROVIDERS) as ProviderId[]) {
-    result[providerId] = await hasSecret(ownerId, "ai_provider_key", providerId)
+    result[providerId] = await hasSecret(
+      ownerId,
+      "ai_provider_key",
+      providerId,
+    );
   }
-  return result
+  return result;
 }
 
 export function hasGatewayEnvironmentCredential(): boolean {
-  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL === "1")
+  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL === "1");
 }

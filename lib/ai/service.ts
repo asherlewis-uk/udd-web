@@ -1,44 +1,53 @@
-import { createClient } from "@/lib/supabase/server"
-import { generateResult } from "@/lib/ai/generator"
-import { getActiveProviderForOwner, getCredentialForProvider } from "@/lib/ai/providers/server"
-import type { ProviderConfig } from "@/lib/ai/providers"
+import { createClient } from "@/lib/supabase/server";
+import { generateResult } from "@/lib/ai/generator";
+import {
+  getActiveProviderForOwner,
+  getCredentialForProvider,
+} from "@/lib/ai/providers/server";
+import type { ProviderConfig } from "@/lib/ai/providers";
 import type {
   AITaskEventKind,
   AITaskEventPayload,
   AITaskKind,
   AITaskResult,
-} from "@/lib/ai/types"
+} from "@/lib/ai/types";
 import {
   summarizeReport,
   validateProject,
   type ValidationFile,
   type ValidationIssue,
   type ValidationReport,
-} from "@/lib/validation"
+} from "@/lib/validation";
 
 /** Maximum time allowed for a single AI generation call (5 minutes). */
-const GENERATION_TIMEOUT_MS = 5 * 60 * 1000
+const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 
 function formatAITaskError(
   err: unknown,
   provider: ProviderConfig | null,
   usedStoredCredential: boolean,
 ): string {
-  const message = err instanceof Error ? err.message : "Unknown error"
+  const message = err instanceof Error ? err.message : "Unknown error";
 
-  if (/AI_GATEWAY_API_KEY|Unauthenticated request to AI Gateway|AI Gateway authentication failed/i.test(message)) {
-    return "UDD could not authenticate with Vercel AI Gateway. Configure AI_GATEWAY_API_KEY or Vercel OIDC; stored provider keys still route through AI Gateway."
+  if (
+    /AI_GATEWAY_API_KEY|Unauthenticated request to AI Gateway|AI Gateway authentication failed/i.test(
+      message,
+    )
+  ) {
+    return "UDD could not authenticate with Vercel AI Gateway. Configure AI_GATEWAY_API_KEY or Vercel OIDC; stored provider keys still route through AI Gateway.";
   }
 
   if (
     provider &&
     usedStoredCredential &&
-    /(invalid api key|api key|credential|authentication|unauthorized|forbidden|401|403)/i.test(message)
+    /(invalid api key|api key|credential|authentication|unauthorized|forbidden|401|403)/i.test(
+      message,
+    )
   ) {
-    return `The saved ${provider.label} credential could not be used. Replace or delete it, then retry the task.`
+    return `The saved ${provider.label} credential could not be used. Replace or delete it, then retry the task.`;
   }
 
-  return message
+  return message;
 }
 
 /**
@@ -57,9 +66,9 @@ function formatAITaskError(
  * Swapping provider only means changing UDD_AI_PROVIDER — no code changes here.
  */
 export async function runAITask(taskId: string): Promise<void> {
-  const supabase = await createClient()
-  let generationProvider: ProviderConfig | null = null
-  let usedStoredCredential = false
+  const supabase = await createClient();
+  let generationProvider: ProviderConfig | null = null;
+  let usedStoredCredential = false;
 
   // Load the task. RLS guarantees it belongs to the caller.
   const { data: task, error: loadError } = await supabase
@@ -68,29 +77,34 @@ export async function runAITask(taskId: string): Promise<void> {
       "id, project_id, owner_id, kind, status, input, projects(name, idea, description)",
     )
     .eq("id", taskId)
-    .single()
+    .single();
 
   if (loadError || !task) {
-    console.log("[v0] runAITask: task not found", { taskId, error: loadError?.message })
-    return
+    console.log("[v0] runAITask: task not found", {
+      taskId,
+      error: loadError?.message,
+    });
+    return;
   }
 
   if (task.status !== "pending") {
     // Idempotent: avoid double-processing a task already picked up.
-    return
+    return;
   }
 
-  const ownerId = task.owner_id as string
-  const projectId = task.project_id as string
-  const kind = task.kind as AITaskKind
-  const input = (task.input ?? {}) as { prompt?: string }
-  const prompt = typeof input.prompt === "string" ? input.prompt : ""
-  const projectRel = task.projects as unknown as
-    | { name?: string; idea?: string | null; description?: string | null }
-    | null
-  const projectName = projectRel?.name?.trim() || "Project"
-  const idea = projectRel?.idea ?? null
-  const description = projectRel?.description ?? null
+  const ownerId = task.owner_id as string;
+  const projectId = task.project_id as string;
+  const kind = task.kind as AITaskKind;
+  const input = (task.input ?? {}) as { prompt?: string };
+  const prompt = typeof input.prompt === "string" ? input.prompt : "";
+  const projectRel = task.projects as unknown as {
+    name?: string;
+    idea?: string | null;
+    description?: string | null;
+  } | null;
+  const projectName = projectRel?.name?.trim() || "Project";
+  const idea = projectRel?.idea ?? null;
+  const description = projectRel?.description ?? null;
 
   const writeEvent = async (
     eventKind: AITaskEventKind,
@@ -101,8 +115,8 @@ export async function runAITask(taskId: string): Promise<void> {
       owner_id: ownerId,
       kind: eventKind,
       payload,
-    })
-  }
+    });
+  };
 
   try {
     // pending → running. Conditional on status=pending so that if two
@@ -114,36 +128,42 @@ export async function runAITask(taskId: string): Promise<void> {
       .eq("id", taskId)
       .eq("owner_id", ownerId)
       .eq("status", "pending")
-      .select("id")
+      .select("id");
     if (claimError) {
-      console.log("[v0] runAITask: claim failed", { taskId, error: claimError.message })
-      return
+      console.log("[v0] runAITask: claim failed", {
+        taskId,
+        error: claimError.message,
+      });
+      return;
     }
     if (!claimed || claimed.length === 0) {
       // Another driver won the race — nothing to do.
-      return
+      return;
     }
-    await writeEvent("started", { message: "Task picked up" })
+    await writeEvent("started", { message: "Task picked up" });
 
     // Resolve provider from per-user saved default (if any), falling back
     // to the env-based default. This wires getActiveProviderForOwner into
     // the generation path so saveAIProviderConfig has an effect.
-    const provider = await getActiveProviderForOwner(ownerId, supabase)
+    const provider = await getActiveProviderForOwner(ownerId, supabase);
 
-    generationProvider = provider
+    generationProvider = provider;
 
     // Resolve stored user credential for the selected provider. When present,
     // generateResult forwards it to AI Gateway as request-scoped BYOK data.
-    const credential = await getCredentialForProvider(ownerId, provider.id)
-    usedStoredCredential = Boolean(credential)
+    const credential = await getCredentialForProvider(ownerId, provider.id);
+    usedStoredCredential = Boolean(credential);
 
     // Create an AbortController with a timeout so a hung stream doesn't
     // orphan the task in 'running' forever. The reaper catches anything
     // that slips past, but this provides a faster, cleaner failure path.
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), GENERATION_TIMEOUT_MS)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      GENERATION_TIMEOUT_MS,
+    );
 
-    let result: AITaskResult
+    let result: AITaskResult;
     try {
       // Real streaming generation. Hooks emit progress events as the object grows.
       result = await generateResult(
@@ -157,7 +177,7 @@ export async function runAITask(taskId: string): Promise<void> {
               await writeEvent("progress", {
                 step: "calling_model",
                 message: `Calling ${provider.label} (${provider.model})`,
-              })
+              });
             },
             onPartial: async ({ summaryChars, fileCount, latestFilePath }) => {
               const message =
@@ -165,18 +185,18 @@ export async function runAITask(taskId: string): Promise<void> {
                   ? `Streaming response... (${summaryChars} chars)`
                   : latestFilePath
                     ? `Generating ${latestFilePath} (file ${fileCount})`
-                    : `Generating file ${fileCount}`
+                    : `Generating file ${fileCount}`;
               await writeEvent("progress", {
                 step: "streaming",
                 message,
                 file_count: fileCount,
-              })
+              });
             },
           },
         },
-      )
+      );
     } finally {
-      clearTimeout(timeoutId)
+      clearTimeout(timeoutId);
     }
 
     // Stage the generator output onto the task row while status is still
@@ -192,13 +212,13 @@ export async function runAITask(taskId: string): Promise<void> {
       .eq("id", taskId)
       .eq("owner_id", ownerId)
       .eq("status", "running")
-      .select("id")
+      .select("id");
     if (stageError) {
-      throw new Error(`Failed to stage task output: ${stageError.message}`)
+      throw new Error(`Failed to stage task output: ${stageError.message}`);
     }
     if (!staged || staged.length === 0) {
       // Cancelled or otherwise terminalized between claim and stage.
-      return
+      return;
     }
 
     // ------------------------------------------------------------------
@@ -223,10 +243,10 @@ export async function runAITask(taskId: string): Promise<void> {
       ownerId,
       result,
       kind,
-    )
-    await writeValidationEvents(writeEvent, report)
+    );
+    await writeValidationEvents(writeEvent, report);
     if (!report.ok) {
-      throw new Error(summarizeReport(report))
+      throw new Error(summarizeReport(report));
     }
 
     // Persist generated files into project_files. project_files is the
@@ -237,7 +257,7 @@ export async function runAITask(taskId: string): Promise<void> {
     //
     // `kind` drives prune semantics: scaffold replaces the file set
     // entirely; edit/refactor/explain/other are additive.
-    await persistFiles(supabase, projectId, ownerId, result, kind)
+    await persistFiles(supabase, projectId, ownerId, result, kind);
 
     // running → completed. Only reachable after files have been persisted,
     // so 'completed' now implies the Files tab and runtime have real data.
@@ -254,30 +274,34 @@ export async function runAITask(taskId: string): Promise<void> {
       .eq("id", taskId)
       .eq("owner_id", ownerId)
       .eq("status", "running")
-      .select("id")
+      .select("id");
     if (completeError) {
-      throw new Error(`Failed to finalize task: ${completeError.message}`)
+      throw new Error(`Failed to finalize task: ${completeError.message}`);
     }
     if (!completed || completed.length === 0) {
       // Cancelled or otherwise terminalized after persistence — skip the
       // completed event so the UI doesn't show a "completed" event on a
       // task that ended up 'cancelled'.
-      return
+      return;
     }
 
     await writeEvent("completed", {
       summary: result.summary,
       file_count: result.files.length,
-    })
+    });
 
     // Touch the parent project so list sorting reflects activity.
     await supabase
       .from("projects")
       .update({ status: "active", last_opened_at: new Date().toISOString() })
       .eq("id", projectId)
-      .eq("owner_id", ownerId)
+      .eq("owner_id", ownerId);
   } catch (err) {
-    const message = formatAITaskError(err, generationProvider, usedStoredCredential)
+    const message = formatAITaskError(
+      err,
+      generationProvider,
+      usedStoredCredential,
+    );
     await supabase
       .from("ai_tasks")
       .update({
@@ -286,13 +310,13 @@ export async function runAITask(taskId: string): Promise<void> {
         finished_at: new Date().toISOString(),
       })
       .eq("id", taskId)
-      .eq("owner_id", ownerId)
-    await writeEvent("failed", { error: message })
+      .eq("owner_id", ownerId);
+    await writeEvent("failed", { error: message });
   }
 }
 
 /** Stale threshold in milliseconds (10 minutes). */
-const STALE_TASK_MS = 10 * 60 * 1000
+const STALE_TASK_MS = 10 * 60 * 1000;
 
 /**
  * Opportunistic reaper: marks tasks stuck in pending/running as failed if
@@ -303,8 +327,8 @@ export async function reapStaleTasks(
   projectId: string,
   ownerId: string,
 ): Promise<number> {
-  const supabase = await createClient()
-  const cutoff = new Date(Date.now() - STALE_TASK_MS).toISOString()
+  const supabase = await createClient();
+  const cutoff = new Date(Date.now() - STALE_TASK_MS).toISOString();
 
   // Correlate each status with the right age column:
   //   pending → age measured from created_at (started_at is always NULL here)
@@ -323,9 +347,9 @@ export async function reapStaleTasks(
     .or(
       `and(status.eq.pending,created_at.lt.${cutoff}),and(status.eq.running,started_at.lt.${cutoff})`,
     )
-    .select("id")
+    .select("id");
 
-  return data?.length ?? 0
+  return data?.length ?? 0;
 }
 
 async function persistFiles(
@@ -335,7 +359,7 @@ async function persistFiles(
   result: AITaskResult,
   kind: AITaskKind,
 ): Promise<void> {
-  if (!result.files.length) return
+  if (!result.files.length) return;
 
   const rows = result.files.map((f) => ({
     project_id: projectId,
@@ -345,7 +369,7 @@ async function persistFiles(
     language: f.language ?? null,
     size_bytes: new TextEncoder().encode(f.content).length,
     updated_at: new Date().toISOString(),
-  }))
+  }));
 
   // 1. Upsert first so the new file set is fully present before we prune.
   //    There is no moment where a scaffold leaves the Files tab empty —
@@ -353,13 +377,13 @@ async function persistFiles(
   //    any about-to-be-pruned stale paths, never less than the new set.
   const { error: upsertError } = await supabase
     .from("project_files")
-    .upsert(rows, { onConflict: "project_id,path" })
+    .upsert(rows, { onConflict: "project_id,path" });
 
   if (upsertError) {
     // project_files is the source of truth for the Files tab and runtime
     // validation. A persist failure must fail the whole task — propagate so
     // runAITask's catch marks status='failed' with a real error message.
-    throw new Error(`Failed to persist project files: ${upsertError.message}`)
+    throw new Error(`Failed to persist project files: ${upsertError.message}`);
   }
 
   // 2. For scaffold kind, remove stale paths that weren't in the new set.
@@ -372,20 +396,22 @@ async function persistFiles(
   //    PostgREST `not.in` operator. The explicit .in() delete below takes
   //    an array and handles escaping for us.
   if (kind === "scaffold") {
-    const keepPaths = new Set(rows.map((r) => r.path))
+    const keepPaths = new Set(rows.map((r) => r.path));
 
     const { data: existing, error: selectError } = await supabase
       .from("project_files")
       .select("path")
       .eq("project_id", projectId)
-      .eq("owner_id", ownerId)
+      .eq("owner_id", ownerId);
     if (selectError) {
-      throw new Error(`Failed to read project files for prune: ${selectError.message}`)
+      throw new Error(
+        `Failed to read project files for prune: ${selectError.message}`,
+      );
     }
 
     const stale = (existing ?? [])
       .map((r) => r.path as string)
-      .filter((p) => !keepPaths.has(p))
+      .filter((p) => !keepPaths.has(p));
 
     if (stale.length > 0) {
       const { error: pruneError } = await supabase
@@ -393,20 +419,22 @@ async function persistFiles(
         .delete()
         .eq("project_id", projectId)
         .eq("owner_id", ownerId)
-        .in("path", stale)
+        .in("path", stale);
 
       if (pruneError) {
         // Prune failure is fatal: a scaffold that didn't prune leaves
         // the Files tab in a mixed state (new + stale) which violates
         // the scaffold contract.
-        throw new Error(`Failed to prune stale project files: ${pruneError.message}`)
+        throw new Error(
+          `Failed to prune stale project files: ${pruneError.message}`,
+        );
       }
     }
   }
 }
 
 /** Cap on per-issue events emitted per task so the UI stays readable. */
-const MAX_VALIDATION_ISSUE_EVENTS = 50
+const MAX_VALIDATION_ISSUE_EVENTS = 50;
 
 /**
  * Build the merged file-set and run validateProject against it.
@@ -428,34 +456,36 @@ async function validateGeneratedResult(
     path: f.path,
     content: f.content,
     language: f.language ?? null,
-  }))
-  const newPaths = new Set(generated.map((f) => f.path))
+  }));
+  const newPaths = new Set(generated.map((f) => f.path));
 
-  let merged: ValidationFile[]
+  let merged: ValidationFile[];
   if (kind === "scaffold") {
-    merged = generated
+    merged = generated;
   } else {
     const { data: existing, error: existingError } = await supabase
       .from("project_files")
       .select("path, content, language")
       .eq("project_id", projectId)
-      .eq("owner_id", ownerId)
+      .eq("owner_id", ownerId);
     if (existingError) {
-      throw new Error(`Failed to load project files for validation: ${existingError.message}`)
+      throw new Error(
+        `Failed to load project files for validation: ${existingError.message}`,
+      );
     }
-    const overlay = new Map<string, ValidationFile>()
+    const overlay = new Map<string, ValidationFile>();
     for (const row of existing ?? []) {
       overlay.set(row.path as string, {
         path: row.path as string,
         content: (row.content as string) ?? "",
         language: (row.language as string | null) ?? null,
-      })
+      });
     }
-    for (const f of generated) overlay.set(f.path, f)
-    merged = Array.from(overlay.values())
+    for (const f of generated) overlay.set(f.path, f);
+    merged = Array.from(overlay.values());
   }
 
-  return validateProject(merged, { newPaths })
+  return validateProject(merged, { newPaths });
 }
 
 async function writeValidationEvents(
@@ -473,11 +503,11 @@ async function writeValidationEvents(
     blocking_count: report.blockingCount,
     warning_count: report.warningCount,
     info_count: report.infoCount,
-  })
+  });
 
-  const toEmit = report.issues.slice(0, MAX_VALIDATION_ISSUE_EVENTS)
+  const toEmit = report.issues.slice(0, MAX_VALIDATION_ISSUE_EVENTS);
   for (const issue of toEmit) {
-    await writeEvent("validation", issuePayload(issue))
+    await writeEvent("validation", issuePayload(issue));
   }
   if (report.issues.length > toEmit.length) {
     await writeEvent("validation", {
@@ -485,7 +515,7 @@ async function writeValidationEvents(
       message: `… and ${report.issues.length - toEmit.length} more issue${
         report.issues.length - toEmit.length === 1 ? "" : "s"
       } not shown.`,
-    })
+    });
   }
 }
 
@@ -497,5 +527,5 @@ function issuePayload(issue: ValidationIssue): AITaskEventPayload {
     line: issue.line,
     message: issue.message,
     suggestion: issue.suggestion,
-  }
+  };
 }

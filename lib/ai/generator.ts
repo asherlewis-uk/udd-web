@@ -1,8 +1,12 @@
-import { streamText, Output } from "ai"
-import * as z from "zod"
-import type { AITaskKind, AITaskResult } from "@/lib/ai/types"
-import { getActiveProvider, type ProviderConfig } from "@/lib/ai/providers"
-import { buildSystemPrompt, buildUserPrompt, type PromptContext } from "@/lib/ai/prompts"
+import { streamText, Output } from "ai";
+import * as z from "zod";
+import type { AITaskKind, AITaskResult } from "@/lib/ai/types";
+import { getActiveProvider, type ProviderConfig } from "@/lib/ai/providers";
+import {
+  buildSystemPrompt,
+  buildUserPrompt,
+  type PromptContext,
+} from "@/lib/ai/prompts";
 
 /**
  * Derive the per-call output token cap from the task kind. Scaffold tasks
@@ -12,14 +16,14 @@ import { buildSystemPrompt, buildUserPrompt, type PromptContext } from "@/lib/ai
  * well under the default ceiling.
  */
 function maxOutputTokensFor(kind: AITaskKind): number {
-  return kind === "scaffold" ? 8000 : 4000
+  return kind === "scaffold" ? 8000 : 4000;
 }
 
 function gatewayProviderOptionsFor(
   provider: ProviderConfig,
   credential: string | null | undefined,
 ) {
-  if (!credential) return undefined
+  if (!credential) return undefined;
 
   return {
     gateway: {
@@ -28,7 +32,7 @@ function gatewayProviderOptionsFor(
         [provider.id]: [{ apiKey: credential }],
       },
     },
-  }
+  };
 }
 
 /**
@@ -41,9 +45,13 @@ const FileSchema = z.object({
     .describe("Relative repo path, e.g. 'app/page.tsx'. No leading slash."),
   language: z
     .string()
-    .describe("Language identifier for syntax highlighting, e.g. 'tsx', 'ts', 'json', 'md', 'css'."),
-  content: z.string().describe("Full file contents — no placeholders or ellipses."),
-})
+    .describe(
+      "Language identifier for syntax highlighting, e.g. 'tsx', 'ts', 'json', 'md', 'css'.",
+    ),
+  content: z
+    .string()
+    .describe("Full file contents — no placeholders or ellipses."),
+});
 
 const ResultSchema = z.object({
   summary: z
@@ -54,32 +62,32 @@ const ResultSchema = z.object({
     .min(1)
     .max(8)
     .describe("Between 1 and 8 files implementing the request."),
-})
+});
 
 export type StreamHooks = {
   /** Called once when the model has chosen a provider. Fires before any tokens. */
-  onStart?: (info: { provider: ProviderConfig }) => Promise<void> | void
+  onStart?: (info: { provider: ProviderConfig }) => Promise<void> | void;
   /** Called when the partial object grows (new summary or new file). Throttled by caller. */
   onPartial?: (partial: {
-    summaryChars: number
-    fileCount: number
-    latestFilePath: string | null
-  }) => Promise<void> | void
-}
+    summaryChars: number;
+    fileCount: number;
+    latestFilePath: string | null;
+  }) => Promise<void> | void;
+};
 
 export type GenerateOptions = {
-  hooks?: StreamHooks
+  hooks?: StreamHooks;
   /** AbortSignal to cancel the stream (e.g. timeout or user cancel). */
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal;
   /** Override the provider (e.g. from per-user saved default). */
-  provider?: ProviderConfig
+  provider?: ProviderConfig;
   /**
    * User-owned API key resolved server-side by getCredentialForProvider.
    * Present when the user has stored a BYOK credential for the selected provider.
    * Must never be returned to the client.
    */
-  credential?: string | null
-}
+  credential?: string | null;
+};
 
 /**
  * Real AI-backed generator. Preserves the AITaskResult shape exactly so the
@@ -90,12 +98,15 @@ export async function generateResult(
   options?: GenerateOptions,
 ): Promise<AITaskResult> {
   // Use provided override (e.g. per-user saved default) or fall back to env.
-  const provider = options?.provider ?? getActiveProvider()
+  const provider = options?.provider ?? getActiveProvider();
   if (options?.hooks?.onStart) {
-    await options.hooks.onStart({ provider })
+    await options.hooks.onStart({ provider });
   }
 
-  const providerOptions = gatewayProviderOptionsFor(provider, options?.credential)
+  const providerOptions = gatewayProviderOptionsFor(
+    provider,
+    options?.credential,
+  );
 
   const result = streamText({
     model: provider.model,
@@ -105,43 +116,46 @@ export async function generateResult(
     output: Output.object({ schema: ResultSchema }),
     ...(providerOptions ? { providerOptions } : {}),
     abortSignal: options?.abortSignal,
-  })
+  });
 
-  let lastSummaryChars = 0
-  let lastFileCount = 0
-  let lastFilePath: string | null = null
-  let latestPartial: unknown = undefined
+  let lastSummaryChars = 0;
+  let lastFileCount = 0;
+  let lastFilePath: string | null = null;
+  let latestPartial: unknown = undefined;
 
   for await (const partial of result.partialOutputStream) {
-    latestPartial = partial
-    const summaryChars = typeof partial?.summary === "string" ? partial.summary.length : 0
-    const files = Array.isArray(partial?.files) ? partial.files : []
-    const fileCount = files.length
-    const latestFile = files[fileCount - 1]
+    latestPartial = partial;
+    const summaryChars =
+      typeof partial?.summary === "string" ? partial.summary.length : 0;
+    const files = Array.isArray(partial?.files) ? partial.files : [];
+    const fileCount = files.length;
+    const latestFile = files[fileCount - 1];
     const latestPath =
-      latestFile && typeof latestFile.path === "string" ? latestFile.path : null
+      latestFile && typeof latestFile.path === "string"
+        ? latestFile.path
+        : null;
 
-    const summaryGrew = summaryChars > 0 && lastSummaryChars === 0
-    const fileAdded = fileCount > lastFileCount
-    const pathChanged = latestPath !== null && latestPath !== lastFilePath
+    const summaryGrew = summaryChars > 0 && lastSummaryChars === 0;
+    const fileAdded = fileCount > lastFileCount;
+    const pathChanged = latestPath !== null && latestPath !== lastFilePath;
 
     if (summaryGrew || fileAdded || pathChanged) {
-      lastSummaryChars = summaryChars
-      lastFileCount = fileCount
-      lastFilePath = latestPath
+      lastSummaryChars = summaryChars;
+      lastFileCount = fileCount;
+      lastFilePath = latestPath;
       if (options?.hooks?.onPartial) {
         await options.hooks.onPartial({
           summaryChars,
           fileCount,
           latestFilePath: latestPath,
-        })
+        });
       }
     }
   }
 
   // Validate the final streamed object. If the stream was truncated or malformed,
   // Zod will throw and the service will surface the error via the 'failed' event.
-  const parsed = ResultSchema.parse(latestPartial)
+  const parsed = ResultSchema.parse(latestPartial);
 
   return {
     type: "code_change",
@@ -151,5 +165,5 @@ export async function generateResult(
       language: f.language,
       content: f.content,
     })),
-  }
+  };
 }

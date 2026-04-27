@@ -208,13 +208,13 @@ Settings remains the safe credential-management surface for normal replacement/d
 
 Each surface below is labeled **schema only — no app code callers**.
 
-| Surface                              | Schema location             | Status                                          | Source                                                 |
-| ------------------------------------ | --------------------------- | ----------------------------------------------- | ------------------------------------------------------ |
-| `exports` table                      | scripts/001_init_schema.sql | schema only — no app code callers               | scripts/004_document_forward_looking.sql               |
-| `previews` table                     | scripts/001_init_schema.sql | schema only — no app code callers               | Verified by reading all files in lib/ and app/actions/ |
-| `provider_configs.secret_ref` column | scripts/001_init_schema.sql | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql               |
+| Surface                              | Schema location              | Status                                          | Source                                                 |
+| ------------------------------------ | ---------------------------- | ----------------------------------------------- | ------------------------------------------------------ |
+| `exports` table                      | scripts/001_init_schema.sql  | schema only — no app code callers               | scripts/004_document_forward_looking.sql               |
+| `previews` table                     | scripts/001_init_schema.sql  | schema only — no app code callers               | Verified by reading all files in lib/ and app/actions/ |
+| `provider_configs.secret_ref` column | scripts/001_init_schema.sql  | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql               |
 | `user_secrets` table                 | scripts/005_user_secrets.sql | active — read/write by lib/secrets/index.ts     | lib/secrets/index.ts, app/actions/secrets.ts           |
-| `run_sessions.preview_url` column    | scripts/001_init_schema.sql | schema only — always null — no app code callers | lib/runtime/service.ts:212–216                         |
+| `run_sessions.preview_url` column    | scripts/001_init_schema.sql  | schema only — always null — no app code callers | lib/runtime/service.ts:212–216                         |
 
 From scripts/004_document_forward_looking.sql:
 

@@ -85,7 +85,8 @@ export function ProviderForm({
           environment credentials when available.
         </p>
         <p className="text-xs text-muted-foreground">
-          Environment fallback is {environmentCredentialAvailable ? "available" : "not detected"}.
+          Environment fallback is{" "}
+          {environmentCredentialAvailable ? "available" : "not detected"}.
         </p>
       </div>
       <div className="flex items-center gap-3">
@@ -100,7 +101,8 @@ export function ProviderForm({
         <div>
           <h3 className="text-sm font-medium">Provider credentials</h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            Saved keys are validated before encryption and are never shown after save.
+            Saved keys are validated before encryption and are never shown after
+            save.
           </p>
         </div>
         <div className="flex flex-col gap-4">
