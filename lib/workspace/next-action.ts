@@ -7,34 +7,34 @@
  * exact section that justifies the decision.
  */
 
-import type { AITaskStatus, Project, RunStatus } from "@/lib/types"
+import type { AITaskStatus, Project, RunStatus } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Input types
 // ---------------------------------------------------------------------------
 
 export type AITask = {
-  id: string
-  title: string
-  kind: string
-  status: AITaskStatus
-  created_at: string
-  finished_at: string | null
-  error: string | null
-}
+  id: string;
+  title: string;
+  kind: string;
+  status: AITaskStatus;
+  created_at: string;
+  finished_at: string | null;
+  error: string | null;
+};
 
 export type ValidationSummary = {
-  message: string
-  blocking_count: number
-  warning_count: number
-  info_count: number
-}
+  message: string;
+  blocking_count: number;
+  warning_count: number;
+  info_count: number;
+};
 
 export type RunSession = {
-  id: string
-  status: RunStatus
-  started_at: string | null
-}
+  id: string;
+  status: RunStatus;
+  started_at: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Output type
@@ -42,34 +42,40 @@ export type RunSession = {
 
 export type NextAction = {
   /** Short headline — what should happen. */
-  label: string
+  label: string;
   /** Plain-English explanation for a non-coder. */
-  description: string
+  description: string;
   /** The one CTA the user should take. */
   cta: {
-    label: string
-    href: string
-  }
+    label: string;
+    href: string;
+  };
   /** Prose reasoning grounded in system-state.md — for auditability. */
-  reason: string
+  reason: string;
   /** Semantic bucket — drives icon / visual tone in the panel. */
-  state: "idle" | "in_progress" | "blocked" | "ready"
-}
+  state: "idle" | "in_progress" | "blocked" | "ready";
+};
 
 // ---------------------------------------------------------------------------
 // Decision engine
 // ---------------------------------------------------------------------------
 
 export function deriveNextAction(input: {
-  project: Project
-  latestTask: AITask | null
-  validationSummary: ValidationSummary | null
-  projectFilesCount: number
-  latestRunSession: RunSession | null
+  project: Project;
+  latestTask: AITask | null;
+  validationSummary: ValidationSummary | null;
+  projectFilesCount: number;
+  latestRunSession: RunSession | null;
 }): NextAction {
-  const { project, latestTask, validationSummary, projectFilesCount, latestRunSession } = input
-  const aiHref = `/projects/${project.id}/ai`
-  const runHref = `/projects/${project.id}/run`
+  const {
+    project,
+    latestTask,
+    validationSummary,
+    projectFilesCount,
+    latestRunSession,
+  } = input;
+  const aiHref = `/projects/${project.id}/ai`;
+  const runHref = `/projects/${project.id}/run`;
 
   // ── 1. No tasks exist ─────────────────────────────────────────────────────
   // No ai_tasks row exists for this project. Nothing has been generated.
@@ -81,14 +87,16 @@ export function deriveNextAction(input: {
   if (!latestTask) {
     return {
       label: "Start a generation run",
-      description: "No generation runs yet. Describe the first scaffold or change and UDD will draft saved files.",
+      description:
+        "No generation runs yet. Describe the first scaffold or change and UDD will draft saved files.",
       cta: { label: "Start run", href: aiHref },
-      reason: "No ai_tasks row for this project. Work is entirely user-initiated.",
+      reason:
+        "No ai_tasks row for this project. Work is entirely user-initiated.",
       state: "idle",
-    }
+    };
   }
 
-  const operation = nextActionOperation(latestTask.kind)
+  const operation = nextActionOperation(latestTask.kind);
 
   // ── 2. Task pending ───────────────────────────────────────────────────────
   // The ai_tasks row was inserted by createAITask and the after() callback
@@ -105,7 +113,7 @@ export function deriveNextAction(input: {
         "Task status is pending — runAITask has been scheduled via after() but has not started yet " +
         "(system-state.md §AI Pipeline Task state transitions).",
       state: "in_progress",
-    }
+    };
   }
 
   // ── 3. Task running ───────────────────────────────────────────────────────
@@ -124,7 +132,7 @@ export function deriveNextAction(input: {
         "Task status is running — the model is generating output. Outcome will be " +
         "completed or failed (system-state.md §AI Pipeline Task state transitions).",
       state: "in_progress",
-    }
+    };
   }
 
   // ── 3b / 4. Task failed ───────────────────────────────────────────────────
@@ -137,7 +145,7 @@ export function deriveNextAction(input: {
   // (system-state.md §Staging vs persistence order §2:
   //  "validateProject called … Blocking issues → throws → task ends failed, no files written")
   if (latestTask.status === "failed") {
-    const blockingCount = validationSummary?.blocking_count ?? 0
+    const blockingCount = validationSummary?.blocking_count ?? 0;
     return {
       label: "Review failed generation run",
       description:
@@ -155,7 +163,7 @@ export function deriveNextAction(input: {
           : "Task failed — generation, timeout, or persistence error " +
             "(system-state.md §AI Pipeline Task state transitions).",
       state: "blocked",
-    }
+    };
   }
 
   // ── Cancelled ─────────────────────────────────────────────────────────────
@@ -167,13 +175,14 @@ export function deriveNextAction(input: {
   if (latestTask.status === "cancelled") {
     return {
       label: "Resume generation",
-      description: "The last generation run was cancelled. Submit a new prompt to continue.",
+      description:
+        "The last generation run was cancelled. Submit a new prompt to continue.",
       cta: { label: "Start new run", href: aiHref },
       reason:
         "Task was cancelled by the user. No automatic retry — " +
         "(system-state.md §Execution Semantics Explicit absence of automation).",
       state: "idle",
-    }
+    };
   }
 
   // ── From here: latestTask.status === "completed" ─────────────────────────
@@ -194,7 +203,7 @@ export function deriveNextAction(input: {
   //  §Staging vs persistence order §2:
   //  "Blocking issues → throws → task ends failed, no files written")
   // If we observe this state, it is a data inconsistency — surface it.
-  const blockingOnCompleted = validationSummary?.blocking_count ?? 0
+  const blockingOnCompleted = validationSummary?.blocking_count ?? 0;
   if (blockingOnCompleted > 0) {
     return {
       label: "Unexpected state",
@@ -205,7 +214,7 @@ export function deriveNextAction(input: {
         "completed+blocking_count>0 is impossible per Intentional Constraint §1 " +
         "(system-state.md). Data inconsistency detected.",
       state: "blocked",
-    }
+    };
   }
 
   // ── 7. Completed but no project_files ─────────────────────────────────────
@@ -226,7 +235,7 @@ export function deriveNextAction(input: {
         "completed implies persistFiles succeeded (Intentional Constraint §1) but " +
         "projectFilesCount is 0. Data inconsistency.",
       state: "blocked",
-    }
+    };
   }
 
   // ── 9. Run session in progress ────────────────────────────────────────────
@@ -238,7 +247,10 @@ export function deriveNextAction(input: {
   // The runtime does not serve an app — validation-only.
   // (system-state.md §Runtime Pipeline — preview_url behavior:
   //  "preview_url is always null at runtime")
-  if (latestRunSession?.status === "starting" || latestRunSession?.status === "stopping") {
+  if (
+    latestRunSession?.status === "starting" ||
+    latestRunSession?.status === "stopping"
+  ) {
     return {
       label: "Validation check in progress",
       description:
@@ -248,7 +260,7 @@ export function deriveNextAction(input: {
         "Run session status is starting/stopping — the parser is processing files " +
         "(system-state.md §Runtime Pipeline state machine). Nothing is served.",
       state: "in_progress",
-    }
+    };
   }
 
   // ── 11. Run session completed cleanly ────────────────────────────────────
@@ -268,7 +280,7 @@ export function deriveNextAction(input: {
         "Run session status is running — all files parsed cleanly " +
         "(system-state.md §Runtime Pipeline state machine). Nothing is served.",
       state: "ready",
-    }
+    };
   }
 
   // ── 10. Run session error ─────────────────────────────────────────────────
@@ -286,7 +298,7 @@ export function deriveNextAction(input: {
         "Run session status is error — at least one file failed to parse " +
         "(system-state.md §Runtime Pipeline state machine).",
       state: "blocked",
-    }
+    };
   }
 
   // ── 5. Completed with warnings, no run session ────────────────────────────
@@ -296,7 +308,7 @@ export function deriveNextAction(input: {
   //  "report.ok === true iff blockingCount === 0.
   //   Warnings and info issues do not flip this bit.")
   // A validation-only run will surface the warnings in per-file context.
-  const warnings = validationSummary?.warning_count ?? 0
+  const warnings = validationSummary?.warning_count ?? 0;
   if (warnings > 0 && !latestRunSession) {
     return {
       label: "Start validation check",
@@ -306,7 +318,7 @@ export function deriveNextAction(input: {
         `Warnings present (warning_count=${warnings}) — they do not block completion ` +
         `(system-state.md §Validation Layer ok definition). No run session yet.`,
       state: "ready",
-    }
+    };
   }
 
   // ── 8. Files exist, no run session ───────────────────────────────────────
@@ -324,7 +336,7 @@ export function deriveNextAction(input: {
         "Task completed cleanly, no run session. Run sessions are user-initiated " +
         "(system-state.md §Execution Semantics Explicit absence of automation).",
       state: "ready",
-    }
+    };
   }
 
   // ── 6. Completed cleanly, terminal run session (stopped) ─────────────────
@@ -333,20 +345,21 @@ export function deriveNextAction(input: {
   // keep iterating with the AI.
   return {
     label: "Continue building",
-    description: "Submit a new scaffold, edit, or refactor prompt to continue the project.",
+    description:
+      "Submit a new scaffold, edit, or refactor prompt to continue the project.",
     cta: { label: "Continue building", href: aiHref },
     reason:
       "Task completed cleanly, files persisted, run session exists in terminal state. " +
       "Ready for the next iteration.",
     state: "ready",
-  }
+  };
 }
 
 function nextActionOperation(kind: string): {
-  label: string
-  name: string
-  sentenceName: string
-  runningDescription: string
+  label: string;
+  name: string;
+  sentenceName: string;
+  runningDescription: string;
 } {
   if (kind === "scaffold") {
     return {
@@ -355,7 +368,7 @@ function nextActionOperation(kind: string): {
       sentenceName: "The scaffold run",
       runningDescription:
         "UDD is scaffolding a replacement file set. Files are checked before anything is saved.",
-    }
+    };
   }
 
   if (kind === "refactor") {
@@ -365,7 +378,7 @@ function nextActionOperation(kind: string): {
       sentenceName: "The refactor run",
       runningDescription:
         "UDD is drafting a refactor against the saved file set and checking it before anything is saved.",
-    }
+    };
   }
 
   if (kind === "explain") {
@@ -375,7 +388,7 @@ function nextActionOperation(kind: string): {
       sentenceName: "The explanation run",
       runningDescription:
         "UDD is processing an explanation request. Any generated files still validate before save.",
-    }
+    };
   }
 
   if (kind === "other") {
@@ -385,7 +398,7 @@ function nextActionOperation(kind: string): {
       sentenceName: "The generation run",
       runningDescription:
         "UDD is generating output and checking it before anything is saved.",
-    }
+    };
   }
 
   return {
@@ -394,5 +407,5 @@ function nextActionOperation(kind: string): {
     sentenceName: "The edit run",
     runningDescription:
       "UDD is drafting changes against the saved file set and checking them before anything is saved.",
-  }
+  };
 }

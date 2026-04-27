@@ -1,16 +1,16 @@
-"use client"
+"use client";
 
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
-import { FolderTree, Bot, Play, Terminal, Settings2 } from "lucide-react"
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { FolderTree, Bot, Play, Terminal, Settings2 } from "lucide-react";
 
 type Tab = {
-  href: (id: string) => string
-  match: (pathname: string, id: string) => boolean
-  label: string
-  icon: React.ComponentType<{ className?: string }>
-}
+  href: (id: string) => string;
+  match: (pathname: string, id: string) => boolean;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
 
 const TABS: Tab[] = [
   {
@@ -21,7 +21,8 @@ const TABS: Tab[] = [
   },
   {
     href: (id) => `/projects/${id}/ai`,
-    match: (p, id) => p.startsWith(`/projects/${id}/ai`) || p === `/projects/${id}`,
+    match: (p, id) =>
+      p.startsWith(`/projects/${id}/ai`) || p === `/projects/${id}`,
     label: "Cockpit",
     icon: Bot,
   },
@@ -43,15 +44,18 @@ const TABS: Tab[] = [
     label: "Settings",
     icon: Settings2,
   },
-]
+];
 
 export function ProjectTabs({ projectId }: { projectId: string }) {
-  const pathname = usePathname()
+  const pathname = usePathname();
   return (
-    <nav aria-label="Project sections" className="-mb-px flex items-center gap-0.5">
+    <nav
+      aria-label="Project sections"
+      className="-mb-px flex items-center gap-0.5"
+    >
       {TABS.map((tab) => {
-        const active = tab.match(pathname, projectId)
-        const Icon = tab.icon
+        const active = tab.match(pathname, projectId);
+        const Icon = tab.icon;
         return (
           <Link
             key={tab.label}
@@ -68,8 +72,8 @@ export function ProjectTabs({ projectId }: { projectId: string }) {
           >
             <Icon className="h-4 w-4" />
           </Link>
-        )
+        );
       })}
     </nav>
-  )
+  );
 }

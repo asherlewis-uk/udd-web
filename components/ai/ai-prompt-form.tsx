@@ -248,9 +248,9 @@ export function AIPromptForm({
             )
           ) : (
             <>
-                Generation lifecycle —{" "}
+              Generation lifecycle —{" "}
               <span className="font-mono text-[11px]">
-                  queued → generating → saved
+                queued → generating → saved
               </span>
             </>
           )}
@@ -259,7 +259,8 @@ export function AIPromptForm({
           {state.error ? (
             <span className="text-xs text-destructive" role="alert">
               {state.error}
-              {cockpit && state.error.includes("generation runs in progress") ? (
+              {cockpit &&
+              state.error.includes("generation runs in progress") ? (
                 <>
                   {" "}
                   <Link
@@ -315,7 +316,8 @@ function promptOperationForKind(kind: AITaskKind): PromptOperation {
   if (kind === "refactor") {
     return {
       badge: "Refactor run",
-      description: "Generated changes are checked against existing saved files.",
+      description:
+        "Generated changes are checked against existing saved files.",
     };
   }
 

@@ -1,19 +1,19 @@
-"use server"
+"use server";
 
-import { after } from "next/server"
-import { revalidatePath } from "next/cache"
-import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
-import { runAITask } from "@/lib/ai/service"
-import { classifyPrompt } from "@/lib/ai/classify"
+import { after } from "next/server";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { runAITask } from "@/lib/ai/service";
+import { classifyPrompt } from "@/lib/ai/classify";
 
 async function getUser() {
-  const supabase = await createClient()
+  const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error("Not authenticated")
-  return { supabase, user }
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  return { supabase, user };
 }
 
 /**
@@ -23,7 +23,7 @@ async function getUser() {
  * self-healing — a dead task will be cleared by the next visit to the AI
  * tab and the user will regain a slot without operator intervention.
  */
-const MAX_LIVE_TASKS_PER_USER = 3
+const MAX_LIVE_TASKS_PER_USER = 3;
 
 async function enforceConcurrencyLimit(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -33,13 +33,13 @@ async function enforceConcurrencyLimit(
     .from("ai_tasks")
     .select("id", { count: "exact", head: true })
     .eq("owner_id", ownerId)
-    .in("status", ["pending", "running"])
+    .in("status", ["pending", "running"]);
 
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(error.message);
   if ((count ?? 0) >= MAX_LIVE_TASKS_PER_USER) {
     throw new Error(
       `You already have ${count} generation runs in progress. Wait for them to finish (or cancel one) before starting another.`,
-    )
+    );
   }
 }
 
@@ -49,18 +49,19 @@ async function enforceConcurrencyLimit(
  * the new task; the cockpit can request a same-page return with redirect_to.
  */
 export async function createAITask(formData: FormData) {
-  const projectId = String(formData.get("project_id") ?? "").trim()
-  const prompt = String(formData.get("prompt") ?? "").trim()
-  const redirectTo = String(formData.get("redirect_to") ?? "").trim()
-  if (!projectId) throw new Error("Missing project id")
-  if (!prompt) throw new Error("Prompt is required")
-  if (prompt.length > 4000) throw new Error("Prompt is too long (max 4000 chars)")
+  const projectId = String(formData.get("project_id") ?? "").trim();
+  const prompt = String(formData.get("prompt") ?? "").trim();
+  const redirectTo = String(formData.get("redirect_to") ?? "").trim();
+  if (!projectId) throw new Error("Missing project id");
+  if (!prompt) throw new Error("Prompt is required");
+  if (prompt.length > 4000)
+    throw new Error("Prompt is too long (max 4000 chars)");
 
-  const { supabase, user } = await getUser()
+  const { supabase, user } = await getUser();
 
   // 0. Rate-limit: reject if the user has too many live tasks. Runs first
   //    so we don't create a prompt row we'll never process.
-  await enforceConcurrencyLimit(supabase, user.id)
+  await enforceConcurrencyLimit(supabase, user.id);
 
   // 1. Persist the prompt.
   const { data: promptRow, error: promptError } = await supabase
@@ -71,11 +72,11 @@ export async function createAITask(formData: FormData) {
       body: prompt,
     })
     .select("id")
-    .single()
-  if (promptError) throw new Error(promptError.message)
+    .single();
+  if (promptError) throw new Error(promptError.message);
 
   // 2. Create the task in pending state.
-  const { kind, title } = classifyPrompt(prompt)
+  const { kind, title } = classifyPrompt(prompt);
   const { data: taskRow, error: taskError } = await supabase
     .from("ai_tasks")
     .insert({
@@ -88,30 +89,30 @@ export async function createAITask(formData: FormData) {
       input: { prompt },
     })
     .select("id")
-    .single()
-  if (taskError) throw new Error(taskError.message)
+    .single();
+  if (taskError) throw new Error(taskError.message);
 
   // 3. Touch the parent project so activity surfaces on the list immediately.
   await supabase
     .from("projects")
     .update({ status: "active", last_opened_at: new Date().toISOString() })
     .eq("id", projectId)
-    .eq("owner_id", user.id)
+    .eq("owner_id", user.id);
 
   // 4. Schedule processing after the response is flushed so the UI
   //    returns immediately and the real model call runs in the background.
   after(async () => {
-    await runAITask(taskRow.id)
-  })
+    await runAITask(taskRow.id);
+  });
 
-  revalidatePath(`/projects/${projectId}/ai`)
-  revalidatePath(`/projects/${projectId}`)
-  revalidatePath("/projects")
+  revalidatePath(`/projects/${projectId}/ai`);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
   redirect(
     redirectTo === `/projects/${projectId}`
       ? redirectTo
       : `/projects/${projectId}/ai?task=${taskRow.id}`,
-  )
+  );
 }
 
 /**
@@ -119,20 +120,20 @@ export async function createAITask(formData: FormData) {
  * `after()` invocation didn't complete (e.g. server restart).
  */
 export async function retryPendingTask(taskId: string, projectId: string) {
-  const { supabase, user } = await getUser()
+  const { supabase, user } = await getUser();
   const { data } = await supabase
     .from("ai_tasks")
     .select("id, status")
     .eq("id", taskId)
     .eq("owner_id", user.id)
-    .single()
-  if (!data || data.status !== "pending") return
+    .single();
+  if (!data || data.status !== "pending") return;
 
   after(async () => {
-    await runAITask(taskId)
-  })
+    await runAITask(taskId);
+  });
 
-  revalidatePath(`/projects/${projectId}/ai`)
+  revalidatePath(`/projects/${projectId}/ai`);
 }
 
 /**
@@ -142,11 +143,11 @@ export async function retryPendingTask(taskId: string, projectId: string) {
  * spurious `completed` event.
  */
 export async function cancelAITask(formData: FormData) {
-  const taskId = String(formData.get("task_id") ?? "").trim()
-  const projectId = String(formData.get("project_id") ?? "").trim()
-  if (!taskId || !projectId) throw new Error("Missing task id or project id")
+  const taskId = String(formData.get("task_id") ?? "").trim();
+  const projectId = String(formData.get("project_id") ?? "").trim();
+  if (!taskId || !projectId) throw new Error("Missing task id or project id");
 
-  const { supabase, user } = await getUser()
+  const { supabase, user } = await getUser();
 
   await supabase
     .from("ai_tasks")
@@ -157,9 +158,9 @@ export async function cancelAITask(formData: FormData) {
     })
     .eq("id", taskId)
     .eq("owner_id", user.id)
-    .in("status", ["pending", "running"])
+    .in("status", ["pending", "running"]);
 
-  revalidatePath(`/projects/${projectId}/ai`)
+  revalidatePath(`/projects/${projectId}/ai`);
 }
 
 /**
@@ -169,21 +170,21 @@ export async function cancelAITask(formData: FormData) {
  * the parent `prompts` row is preserved.
  */
 export async function deleteAITask(formData: FormData) {
-  const taskId = String(formData.get("task_id") ?? "").trim()
-  const projectId = String(formData.get("project_id") ?? "").trim()
-  if (!taskId || !projectId) throw new Error("Missing task id or project id")
+  const taskId = String(formData.get("task_id") ?? "").trim();
+  const projectId = String(formData.get("project_id") ?? "").trim();
+  if (!taskId || !projectId) throw new Error("Missing task id or project id");
 
-  const { supabase, user } = await getUser()
+  const { supabase, user } = await getUser();
 
   await supabase
     .from("ai_tasks")
     .delete()
     .eq("id", taskId)
     .eq("owner_id", user.id)
-    .in("status", ["completed", "failed", "cancelled"])
+    .in("status", ["completed", "failed", "cancelled"]);
 
-  revalidatePath(`/projects/${projectId}/ai`)
-  redirect(`/projects/${projectId}/ai`)
+  revalidatePath(`/projects/${projectId}/ai`);
+  redirect(`/projects/${projectId}/ai`);
 }
 
 /**
@@ -193,25 +194,25 @@ export async function deleteAITask(formData: FormData) {
  * delete it separately if they want.
  */
 export async function retryFailedTask(formData: FormData) {
-  const taskId = String(formData.get("task_id") ?? "").trim()
-  const projectId = String(formData.get("project_id") ?? "").trim()
-  if (!taskId || !projectId) throw new Error("Missing task id or project id")
+  const taskId = String(formData.get("task_id") ?? "").trim();
+  const projectId = String(formData.get("project_id") ?? "").trim();
+  if (!taskId || !projectId) throw new Error("Missing task id or project id");
 
-  const { supabase, user } = await getUser()
+  const { supabase, user } = await getUser();
 
   // Rate-limit retries for the same reason as creation — a user with many
   // failed tasks could otherwise queue them all at once.
-  await enforceConcurrencyLimit(supabase, user.id)
+  await enforceConcurrencyLimit(supabase, user.id);
 
   const { data: original } = await supabase
     .from("ai_tasks")
     .select("id, project_id, prompt_id, kind, title, input, status")
     .eq("id", taskId)
     .eq("owner_id", user.id)
-    .single()
-  if (!original) throw new Error("Task not found")
+    .single();
+  if (!original) throw new Error("Task not found");
   if (original.status !== "failed" && original.status !== "cancelled") {
-    throw new Error("Only failed or cancelled tasks can be retried.")
+    throw new Error("Only failed or cancelled tasks can be retried.");
   }
 
   const { data: fresh, error: insertError } = await supabase
@@ -226,15 +227,15 @@ export async function retryFailedTask(formData: FormData) {
       input: original.input,
     })
     .select("id")
-    .single()
+    .single();
   if (insertError || !fresh) {
-    throw new Error(insertError?.message ?? "Failed to create retry task")
+    throw new Error(insertError?.message ?? "Failed to create retry task");
   }
 
   after(async () => {
-    await runAITask(fresh.id)
-  })
+    await runAITask(fresh.id);
+  });
 
-  revalidatePath(`/projects/${projectId}/ai`)
-  redirect(`/projects/${projectId}/ai?task=${fresh.id}`)
+  revalidatePath(`/projects/${projectId}/ai`);
+  redirect(`/projects/${projectId}/ai?task=${fresh.id}`);
 }

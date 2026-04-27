@@ -449,7 +449,8 @@ function TaskConversationSummary({
       {output && task.status === "completed" ? (
         <ConversationFact label="Saved proof">
           Saved {completedFileCount} generated file
-          {completedFileCount === 1 ? "" : "s"} after validation passed. {output.summary}
+          {completedFileCount === 1 ? "" : "s"} after validation passed.{" "}
+          {output.summary}
         </ConversationFact>
       ) : null}
 
