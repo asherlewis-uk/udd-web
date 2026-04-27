@@ -9,7 +9,7 @@ Maintained under the rules in CLAUDE.md §system-state.md Enforcement.
 
 ## AI Pipeline — Behavioral constants
 
-### Named constants
+### AI named constants
 
 | Constant                            | Value                      | Source                    |
 | ----------------------------------- | -------------------------- | ------------------------- |
@@ -17,13 +17,15 @@ Maintained under the rules in CLAUDE.md §system-state.md Enforcement.
 | `GENERATION_TIMEOUT_MS`             | 300 000 ms (5 min)         | lib/ai/service.ts:19      |
 | `STALE_TASK_MS`                     | 600 000 ms (10 min)        | lib/ai/service.ts:262     |
 | `MAX_VALIDATION_ISSUE_EVENTS`       | 50                         | lib/ai/service.ts:376     |
+| `MAX_REPAIR_ISSUES_IN_PROMPT`       | 20                         | lib/ai/repair.ts:7        |
+| `MAX_REPAIR_FILES_IN_PROMPT`        | 8                          | lib/ai/repair.ts:8        |
 | Max output tokens — `scaffold`      | 8 000                      | lib/ai/generator.ts:15    |
 | Max output tokens — all other kinds | 4 000                      | lib/ai/generator.ts:15    |
 | Files per generation                | 1–8 (min/max on Zod array) | lib/ai/generator.ts:38–39 |
 
 ### Task state transitions
 
-```
+```text
 pending   → running    claim via conditional update eq("status","pending") (lib/ai/service.ts:87–99)
 running   → completed  after validation passes AND persistFiles succeeds (lib/ai/service.ts:213–224)
 running   → failed     on any error: generation, timeout, validation, or persistence (lib/ai/service.ts:246–258)
@@ -43,6 +45,26 @@ These four steps run sequentially inside `runAITask` and must not be reordered (
 2. `validateProject` called on the merged file-set. Blocking issues → throws → task ends `failed`, no files written. (lib/ai/service.ts:187–197)
 3. `persistFiles` called — upserts to `project_files`. (lib/ai/service.ts:207)
 4. Task marked `completed` only after step 3 returns without error. (lib/ai/service.ts:213–224)
+
+### Validation-to-repair loop
+
+Repair is an explicit user action, not automatic recovery. `repairFailedTask` accepts a failed task id and project id, reloads the source task by `id`, `project_id`, and `owner_id`, and rejects anything that is not currently `status='failed'`. (app/actions/ai.ts:262–284)
+
+The repair action uses stored validation evidence from the failed work item. It reads `ai_task_events` for `kind='validation'`, extracts the summary and blocking issue payloads, and refuses to create a repair task unless blocking validation evidence exists. (app/actions/ai.ts:286–302, 386–417)
+
+The repair action also requires the failed task's staged output. If `ai_tasks.output` does not contain generated files, repair creation fails instead of inventing a repair target. (app/actions/ai.ts:304–308, 419–444)
+
+Repair tasks are ordinary `ai_tasks` rows with existing `kind` values plus explicit `input.repair` metadata. `repairTaskKindFor` keeps scaffold repair as `kind='scaffold'` so scaffold replacement semantics still apply; every other repair is stored as `kind='edit'` and is checked against the saved file set. The task input stores `source_task_id`, source kind/title/error, validation summary, blocking issues, and generated file paths. (lib/ai/repair.ts:26–44, app/actions/ai.ts:332–354)
+
+The model prompt for repair is built from the original request or repair display text, the recorded task error, the validation summary, the blocking validation issues, and the failed generated file contents. The prompt explicitly says the failed output was not saved and that validation/persistence decide success after the response. (lib/ai/repair.ts:83–125)
+
+After a repair task is inserted, `repairFailedTask` schedules the same `runAITask(fresh.id)` background path used by ordinary generation. Therefore repair output is staged, validated with `validateProject`, persisted by `persistFiles`, and marked `completed` only through the same validation-before-persistence gate described above. (app/actions/ai.ts:368–379, lib/ai/service.ts:162–224)
+
+Failed repairs remain normal failed tasks. Because repair tasks carry `input.repair`, the cockpit labels them as repair runs, shows the failed source task id, keeps diagnostic output separate from saved proof, and offers another evidence-backed repair action when blocking validation evidence is present. (app/(app)/projects/[id]/page.tsx:337–351, 418–535, 839–875)
+
+The deterministic cockpit next action has a repair-specific blocked state only when the latest failed task has blocking validation evidence; it renders a form that calls `repairFailedTask` with the failed task id. This is repair-specific recovery, not predictive next-action orchestration. (lib/workspace/next-action.ts:151–179, app/(app)/projects/[id]/page.tsx:900–933)
+
+The AI inspection route also exposes repair for failed validation tasks: task detail labels repair tasks from `input.repair` and renders a `Repair` button only when validation events contain a blocking issue. (components/ai/task-detail.tsx:34–69, 313–342)
 
 ---
 
@@ -99,18 +121,18 @@ Files not in `newPaths` are still included in import resolution (so cross-file e
 
 ### Merge semantics for the file-set passed to `validateProject`
 
-| Task `kind`                            | Merged file-set                                                                                   |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `scaffold`                             | Generated files only                                                                              |
-| `edit`, `refactor`, `explain`, `other` | Existing `project_files` rows overlaid with generated files; generated files win on path conflict |
+| Task `kind`                                                 | Merged file-set                                                                                   |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `scaffold` (including scaffold repair)                      | Generated files only                                                                              |
+| `edit`, `refactor`, `explain`, `other`, non-scaffold repair | Existing `project_files` rows overlaid with generated files; generated files win on path conflict |
 
-Source: lib/ai/service.ts:394–425
+Source: lib/ai/service.ts:394–425, lib/ai/repair.ts:42–44
 
 ---
 
 ## Runtime Pipeline — State machine and behavioral constants
 
-### Named constants
+### Runtime named constants
 
 | Constant           | Value               | Source                     |
 | ------------------ | ------------------- | -------------------------- |
@@ -118,7 +140,7 @@ Source: lib/ai/service.ts:394–425
 
 ### State machine
 
-```
+```text
 [none]           → starting   startRun inserts with status='starting' (lib/runtime/service.ts:28–36)
 starting         → running    all files parse cleanly (lib/runtime/service.ts:226–237)
 starting         → error      any file fails to parse (lib/runtime/service.ts:186–209)
@@ -252,9 +274,9 @@ The project cockpit reconstructs recent generation-run history directly from exi
 
 Conversation entries are built in memory from those rows and sorted by their persisted `created_at` timestamps. A user bubble is rendered only from a recorded prompt: `prompts.body` via `ai_tasks.prompt_id`, falling back to `ai_tasks.input.prompt` when no prompt row is available. Project metadata is not rendered as a user-authored message. (app/(app)/projects/[id]/page.tsx:270–284, 303–311, 717–728)
 
-Task assistant entries are derived from `ai_tasks.kind`, `ai_tasks.status`, timestamps, `ai_tasks.output`, `ai_tasks.error`, and grouped `ai_task_events`. The cockpit maps persisted task kinds to visible operation semantics: scaffold is described as a replacement file-set run, edit/refactor as changes checked against saved files, explanation as an explanation request that still uses the validation gate, and `other` as a general generation run. (app/(app)/projects/[id]/page.tsx:335–397, 400–441)
+Task assistant entries are derived from `ai_tasks.kind`, `ai_tasks.input`, `ai_tasks.status`, timestamps, `ai_tasks.output`, `ai_tasks.error`, and grouped `ai_task_events`. The cockpit maps persisted task kinds to visible operation semantics: scaffold is described as a replacement file-set run, edit/refactor as changes checked against saved files, explanation as an explanation request that still uses the validation gate, and `other` as a general generation run. If `ai_tasks.input.repair` exists, the cockpit labels the entry as a repair run and displays the failed source task id. (app/(app)/projects/[id]/page.tsx:337–351, 418–470)
 
-Pending and running copy is status-backed; running progress uses the latest persisted `progress` event; completed generated output is shown as saved proof using staged task output plus the completed event file count when present; failed staged output is labeled diagnostic and not presented as saved. Validation summaries, blocking issue callouts, failure text, and recovery text come from persisted task fields and `validation` events. (app/(app)/projects/[id]/page.tsx:443–492, 661–690)
+Pending and running copy is status-backed; running progress uses the latest persisted `progress` event; completed generated output is shown as saved proof using staged task output plus the completed event file count when present; failed staged output is labeled diagnostic and not presented as saved. Validation summaries, blocking issue callouts, failure text, and recovery text come from persisted task fields and `validation` events. Failed validation tasks with blocking issue events render repair actions tied to that failed task id. (app/(app)/projects/[id]/page.tsx:443–535, 839–875, 900–933)
 
 While a cockpit submit server action is pending, the prompt form shows a local optimistic “Queuing generation run” echo with the prompt text and the same pure prompt classifier used by task creation. That optimistic echo is active UI state only; it is cleared on server-action error, and reload still reconstructs history from persisted records. (components/ai/ai-prompt-form.tsx:72–87, 95–97, 130–138, 155–202)
 
@@ -275,6 +297,7 @@ All of the following require an explicit user action (form submission or button 
 | Submit AI prompt                     | `createAITask`           | app/actions/ai.ts:51  |
 | Retry a task still in `pending`      | `retryPendingTask`       | app/actions/ai.ts:115 |
 | Retry a `failed` or `cancelled` task | `retryFailedTask`        | app/actions/ai.ts:189 |
+| Repair a failed validation task      | `repairFailedTask`       | app/actions/ai.ts:262 |
 | Cancel a `pending` or `running` task | `cancelAITask`           | app/actions/ai.ts:138 |
 | Delete a terminal-state task         | `deleteAITask`           | app/actions/ai.ts:165 |
 | Start a run session                  | `startRunAction`         | app/actions/run.ts:13 |
@@ -287,6 +310,7 @@ All of the following require an explicit user action (form submission or button 
 | ---------------------------- | ----------------------------------------------------------- | -------------------------- |
 | `runAITask(taskId)`          | `createAITask`                                              | app/actions/ai.ts:102–104  |
 | `runAITask(taskId)`          | `retryFailedTask`                                           | app/actions/ai.ts:228–230  |
+| `runAITask(taskId)`          | `repairFailedTask`                                          | app/actions/ai.ts:368–370  |
 | `runAITask(taskId)`          | `retryPendingTask`                                          | app/actions/ai.ts:125–127  |
 | `driveSession(sessionId)`    | `startRunAction`                                            | app/actions/run.ts:19–21   |
 | `driveSession(newSessionId)` | `startRunFromTaskAction` (when it wins the link-claim race) | app/actions/run.ts:109–111 |
@@ -304,7 +328,7 @@ All of the following require an explicit user action (form submission or button 
 - No cron jobs exist in the codebase.
 - No background workers, queue consumers, or event listeners exist.
 - No automatic task-to-run chaining: a run session is created only when the user explicitly calls `startRunAction` or `startRunFromTaskAction`. (app/actions/run.ts:13, 49)
-- No automatic fail-to-retry: a failed task is retried only when the user explicitly calls `retryFailedTask`. (app/actions/ai.ts:189)
+- No automatic fail-to-retry or fail-to-repair: a failed task is retried only when the user explicitly calls `retryFailedTask`, and repaired only when the user explicitly calls `repairFailedTask`. Repair creation also fails unless stored blocking validation evidence and staged output exist. (app/actions/ai.ts:189, app/actions/ai.ts:262–308)
 - No autonomous agent behavior exists in the codebase.
 
 ### If `after()` does not complete

@@ -6,6 +6,19 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { runAITask } from "@/lib/ai/service";
 import { classifyPrompt } from "@/lib/ai/classify";
+import {
+  buildRepairDisplayPrompt,
+  buildRepairPrompt,
+  buildRepairTaskTitle,
+  repairTaskKindFor,
+  type RepairValidationIssue,
+  type RepairValidationSummary,
+} from "@/lib/ai/repair";
+import type {
+  AITaskEventPayload,
+  AITaskKind,
+  AITaskResult,
+} from "@/lib/ai/types";
 
 async function getUser() {
   const supabase = await createClient();
@@ -238,4 +251,200 @@ export async function retryFailedTask(formData: FormData) {
 
   revalidatePath(`/projects/${projectId}/ai`);
   redirect(`/projects/${projectId}/ai?task=${fresh.id}`);
+}
+
+/**
+ * Create a fresh repair task from a failed validation run. Unlike a plain
+ * retry, this uses the failed task's stored validation events and staged
+ * model output as the repair prompt evidence. The resulting task still flows
+ * through runAITask, so validateProject remains the persistence gate.
+ */
+export async function repairFailedTask(formData: FormData) {
+  const taskId = String(formData.get("task_id") ?? "").trim();
+  const projectId = String(formData.get("project_id") ?? "").trim();
+  const redirectTo = String(formData.get("redirect_to") ?? "").trim();
+  if (!taskId || !projectId) throw new Error("Missing task id or project id");
+
+  const { supabase, user } = await getUser();
+
+  await enforceConcurrencyLimit(supabase, user.id);
+
+  const { data: original, error: originalError } = await supabase
+    .from("ai_tasks")
+    .select("id, project_id, kind, title, status, input, output, error")
+    .eq("id", taskId)
+    .eq("project_id", projectId)
+    .eq("owner_id", user.id)
+    .single();
+  if (originalError || !original) {
+    throw new Error(originalError?.message ?? "Task not found");
+  }
+  if (original.status !== "failed") {
+    throw new Error("Only failed tasks can be repaired.");
+  }
+
+  const { data: validationEvents, error: eventsError } = await supabase
+    .from("ai_task_events")
+    .select("payload")
+    .eq("task_id", taskId)
+    .eq("owner_id", user.id)
+    .eq("kind", "validation")
+    .order("created_at", { ascending: true });
+  if (eventsError) throw new Error(eventsError.message);
+
+  const evidence = extractRepairEvidence(
+    (validationEvents ?? []) as ValidationEventRow[],
+  );
+  if (evidence.blockingIssues.length === 0) {
+    throw new Error(
+      "Only failed validation runs with blocking evidence can be repaired.",
+    );
+  }
+
+  const originalOutput = normalizeTaskOutput(original.output);
+  if (!originalOutput) {
+    throw new Error(
+      "This failed validation run has no staged generated output to repair.",
+    );
+  }
+
+  const sourceKind = original.kind as AITaskKind;
+  const sourceTitle = String(original.title ?? "failed generation run");
+  const originalInput = isRecord(original.input) ? original.input : {};
+  const originalPrompt =
+    typeof originalInput.display_prompt === "string"
+      ? originalInput.display_prompt
+      : typeof originalInput.prompt === "string"
+        ? originalInput.prompt
+        : null;
+  const repairPrompt = buildRepairPrompt({
+    sourceTaskTitle: sourceTitle,
+    sourceTaskKind: sourceKind,
+    originalPrompt,
+    taskError: typeof original.error === "string" ? original.error : null,
+    validationSummary: evidence.summary,
+    blockingIssues: evidence.blockingIssues,
+    generatedFiles: originalOutput.files,
+  });
+  const displayPrompt = buildRepairDisplayPrompt(sourceTitle);
+  const repairKind = repairTaskKindFor(sourceKind);
+
+  const { data: fresh, error: insertError } = await supabase
+    .from("ai_tasks")
+    .insert({
+      project_id: projectId,
+      owner_id: user.id,
+      kind: repairKind,
+      title: buildRepairTaskTitle(sourceTitle),
+      status: "pending",
+      input: {
+        prompt: repairPrompt,
+        display_prompt: displayPrompt,
+        repair: {
+          source_task_id: taskId,
+          source_task_kind: sourceKind,
+          source_task_title: sourceTitle,
+          source_task_error:
+            typeof original.error === "string" ? original.error : null,
+          validation_summary: evidence.summary,
+          blocking_issues: evidence.blockingIssues,
+          generated_file_paths: originalOutput.files.map((file) => file.path),
+        },
+      },
+    })
+    .select("id")
+    .single();
+  if (insertError || !fresh) {
+    throw new Error(insertError?.message ?? "Failed to create repair task");
+  }
+
+  await supabase
+    .from("projects")
+    .update({
+      status: "active",
+      last_opened_at: new Date().toISOString(),
+    })
+    .eq("id", projectId)
+    .eq("owner_id", user.id);
+
+  after(async () => {
+    await runAITask(fresh.id);
+  });
+
+  revalidatePath(`/projects/${projectId}/ai`);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
+  redirect(
+    redirectTo === `/projects/${projectId}`
+      ? redirectTo
+      : `/projects/${projectId}/ai?task=${fresh.id}`,
+  );
+}
+
+type ValidationEventRow = {
+  payload: AITaskEventPayload;
+};
+
+function extractRepairEvidence(events: ValidationEventRow[]): {
+  summary: RepairValidationSummary;
+  blockingIssues: RepairValidationIssue[];
+} {
+  const summaryPayload = events.find(
+    (event) => event.payload.step === "summary",
+  )?.payload;
+  const blockingIssues = events
+    .map((event): RepairValidationIssue | null => {
+      const payload = event.payload;
+      if (payload.severity !== "blocking" || !payload.message) return null;
+      return {
+        severity: "blocking",
+        issue_kind: payload.issue_kind,
+        file_path: payload.file_path,
+        line: payload.line,
+        message: payload.message,
+        suggestion: payload.suggestion,
+      };
+    })
+    .filter((issue): issue is RepairValidationIssue => issue !== null);
+
+  return {
+    summary: {
+      message: summaryPayload?.message ?? "Validation failed.",
+      blocking_count: summaryPayload?.blocking_count ?? blockingIssues.length,
+      warning_count: summaryPayload?.warning_count ?? 0,
+      info_count: summaryPayload?.info_count ?? 0,
+    },
+    blockingIssues,
+  };
+}
+
+function normalizeTaskOutput(output: unknown): AITaskResult | null {
+  if (!isRecord(output)) return null;
+  if (!Array.isArray(output.files)) return null;
+  if (typeof output.summary !== "string") return null;
+
+  const files = output.files
+    .map((file): AITaskResult["files"][number] | null => {
+      if (!isRecord(file)) return null;
+      if (typeof file.path !== "string" || typeof file.content !== "string") {
+        return null;
+      }
+      return {
+        path: file.path,
+        content: file.content,
+        language: typeof file.language === "string" ? file.language : undefined,
+      };
+    })
+    .filter((file): file is AITaskResult["files"][number] => file !== null);
+
+  if (files.length === 0) return null;
+  return {
+    type: "code_change",
+    summary: output.summary,
+    files,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

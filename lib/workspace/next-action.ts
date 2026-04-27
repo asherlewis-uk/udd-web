@@ -8,6 +8,7 @@
  */
 
 import type { AITaskStatus, Project, RunStatus } from "@/lib/types";
+import { isRepairTaskInput } from "@/lib/ai/repair";
 
 // ---------------------------------------------------------------------------
 // Input types
@@ -18,6 +19,7 @@ export type AITask = {
   title: string;
   kind: string;
   status: AITaskStatus;
+  input: Record<string, unknown> | null;
   created_at: string;
   finished_at: string | null;
   error: string | null;
@@ -49,6 +51,8 @@ export type NextAction = {
   cta: {
     label: string;
     href: string;
+    action?: "repair";
+    taskId?: string;
   };
   /** Prose reasoning grounded in system-state.md — for auditability. */
   reason: string;
@@ -146,20 +150,30 @@ export function deriveNextAction(input: {
   //  "validateProject called … Blocking issues → throws → task ends failed, no files written")
   if (latestTask.status === "failed") {
     const blockingCount = validationSummary?.blocking_count ?? 0;
+    const repairAttempt = isRepairTaskInput(latestTask.input);
     return {
-      label: "Review failed generation run",
+      label:
+        blockingCount > 0
+          ? repairAttempt
+            ? "Repair attempt failed"
+            : "Repair failed generation run"
+          : "Review failed generation run",
       description:
         blockingCount > 0
-          ? `The ${operation.name} failed validation with ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"}. Revise the prompt and try again.`
+          ? `The ${operation.name} failed validation with ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"}. Use the recorded validation evidence to queue a repair run.`
           : `The last ${operation.name} failed. Review the error and try again.`,
       cta: {
-        label: blockingCount > 0 ? "Inspect issues" : "Inspect generation run",
+        label:
+          blockingCount > 0 ? "Repair with evidence" : "Inspect generation run",
         href: aiHref,
+        action: blockingCount > 0 ? "repair" : undefined,
+        taskId: blockingCount > 0 ? latestTask.id : undefined,
       },
       reason:
         blockingCount > 0
           ? `Task failed because validateProject emitted blocking issues; no files written ` +
-            `(system-state.md §Staging vs persistence order §2, Intentional Constraint §2).`
+            `(system-state.md §Staging vs persistence order §2, Intentional Constraint §2). ` +
+            `Repair is user-triggered and uses stored validation events from the failed task.`
           : "Task failed — generation, timeout, or persistence error " +
             "(system-state.md §AI Pipeline Task state transitions).",
       state: "blocked",

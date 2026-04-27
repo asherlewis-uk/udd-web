@@ -1,4 +1,4 @@
-import Link from "next/link"
+import Link from "next/link";
 import {
   CheckCircle2,
   Circle,
@@ -12,17 +12,24 @@ import {
   ShieldCheck,
   Trash2,
   TriangleAlert,
+  Wrench,
   XCircle,
-} from "lucide-react"
-import { AIStatusBadge } from "@/components/ai/ai-status-badge"
-import { Button } from "@/components/ui/button"
-import { formatRelative } from "@/lib/slug"
-import { cn } from "@/lib/utils"
-import type { AITaskEventRow, AITaskResult, AITaskRow } from "@/lib/ai/types"
-import { startRunFromTaskAction } from "@/app/actions/run"
-import { cancelAITask, deleteAITask, retryFailedTask } from "@/app/actions/ai"
+} from "lucide-react";
+import { AIStatusBadge } from "@/components/ai/ai-status-badge";
+import { Button } from "@/components/ui/button";
+import { formatRelative } from "@/lib/slug";
+import { cn } from "@/lib/utils";
+import { getRepairMetadata } from "@/lib/ai/repair";
+import type { AITaskEventRow, AITaskResult, AITaskRow } from "@/lib/ai/types";
+import { startRunFromTaskAction } from "@/app/actions/run";
+import {
+  cancelAITask,
+  deleteAITask,
+  repairFailedTask,
+  retryFailedTask,
+} from "@/app/actions/ai";
 
-type EventLike = Pick<AITaskEventRow, "id" | "kind" | "payload" | "created_at">
+type EventLike = Pick<AITaskEventRow, "id" | "kind" | "payload" | "created_at">;
 
 export function TaskDetail({
   task,
@@ -30,18 +37,22 @@ export function TaskDetail({
   prompt,
   projectId,
 }: {
-  task: AITaskRow
-  events: EventLike[]
-  prompt: string | null
-  projectId: string
+  task: AITaskRow;
+  events: EventLike[];
+  prompt: string | null;
+  projectId: string;
 }) {
   return (
     <section className="flex flex-col overflow-hidden rounded-lg border border-border bg-card">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-5 py-4">
         <div className="flex min-w-0 flex-col gap-1">
-          <h3 className="truncate text-sm font-semibold text-foreground">{task.title}</h3>
+          <h3 className="truncate text-sm font-semibold text-foreground">
+            {task.title}
+          </h3>
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-            <span className="font-mono uppercase tracking-wider">{task.kind}</span>
+            <span className="font-mono uppercase tracking-wider">
+              {getRepairMetadata(task.input) ? "repair" : task.kind}
+            </span>
             <span aria-hidden>&middot;</span>
             <span>Created {formatRelative(task.created_at)}</span>
             {task.finished_at ? (
@@ -54,6 +65,11 @@ export function TaskDetail({
         </div>
         <div className="flex items-center gap-2">
           <AIStatusBadge status={task.status} />
+          <RepairTaskControl
+            task={task}
+            events={events}
+            projectId={projectId}
+          />
           <TaskLifecycleControl task={task} projectId={projectId} />
           <RunFromTaskControl task={task} projectId={projectId} />
         </div>
@@ -65,7 +81,7 @@ export function TaskDetail({
         <ResultBlock task={task} />
       </div>
     </section>
-  )
+  );
 }
 
 function PromptBlock({ prompt }: { prompt: string | null }) {
@@ -73,12 +89,14 @@ function PromptBlock({ prompt }: { prompt: string | null }) {
     <div className="flex flex-col gap-2 px-5 py-4">
       <SectionLabel>Prompt</SectionLabel>
       {prompt ? (
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{prompt}</p>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+          {prompt}
+        </p>
       ) : (
         <p className="text-sm text-muted-foreground">No prompt recorded.</p>
       )}
     </div>
-  )
+  );
 }
 
 function EventsBlock({ events }: { events: EventLike[] }) {
@@ -97,7 +115,9 @@ function EventsBlock({ events }: { events: EventLike[] }) {
                   <span className="font-mono uppercase tracking-wider text-foreground">
                     {e.kind}
                   </span>
-                  <span className="text-muted-foreground">{formatRelative(e.created_at)}</span>
+                  <span className="text-muted-foreground">
+                    {formatRelative(e.created_at)}
+                  </span>
                 </div>
                 <EventPayload kind={e.kind} payload={e.payload} />
               </div>
@@ -106,75 +126,82 @@ function EventsBlock({ events }: { events: EventLike[] }) {
         </ol>
       )}
     </div>
-  )
+  );
 }
 
 function EventIcon({
   kind,
   severity,
 }: {
-  kind: AITaskEventRow["kind"]
-  severity?: AITaskEventRow["payload"]["severity"]
+  kind: AITaskEventRow["kind"];
+  severity?: AITaskEventRow["payload"]["severity"];
 }) {
-  const base = "mt-0.5 h-3.5 w-3.5 flex-none"
-  if (kind === "started") return <CircleDot className={cn(base, "text-muted-foreground")} />
-  if (kind === "progress") return <Loader2 className={cn(base, "text-accent")} />
-  if (kind === "completed") return <CheckCircle2 className={cn(base, "text-accent")} />
-  if (kind === "failed") return <CircleAlert className={cn(base, "text-destructive")} />
+  const base = "mt-0.5 h-3.5 w-3.5 flex-none";
+  if (kind === "started")
+    return <CircleDot className={cn(base, "text-muted-foreground")} />;
+  if (kind === "progress")
+    return <Loader2 className={cn(base, "text-accent")} />;
+  if (kind === "completed")
+    return <CheckCircle2 className={cn(base, "text-accent")} />;
+  if (kind === "failed")
+    return <CircleAlert className={cn(base, "text-destructive")} />;
   if (kind === "validation") {
     if (severity === "blocking") {
-      return <CircleAlert className={cn(base, "text-destructive")} />
+      return <CircleAlert className={cn(base, "text-destructive")} />;
     }
     if (severity === "warning") {
-      return <TriangleAlert className={cn(base, "text-foreground/70")} />
+      return <TriangleAlert className={cn(base, "text-foreground/70")} />;
     }
     if (severity === "info") {
-      return <Info className={cn(base, "text-muted-foreground")} />
+      return <Info className={cn(base, "text-muted-foreground")} />;
     }
     // Summary event (no severity) — signal the whole layer.
-    return <ShieldCheck className={cn(base, "text-accent")} />
+    return <ShieldCheck className={cn(base, "text-accent")} />;
   }
-  return <Circle className={cn(base, "text-muted-foreground")} />
+  return <Circle className={cn(base, "text-muted-foreground")} />;
 }
 
 function EventPayload({
   kind,
   payload,
 }: {
-  kind: AITaskEventRow["kind"]
-  payload: AITaskEventRow["payload"]
+  kind: AITaskEventRow["kind"];
+  payload: AITaskEventRow["payload"];
 }) {
   if (kind === "validation") {
-    return <ValidationEventBody payload={payload} />
+    return <ValidationEventBody payload={payload} />;
   }
-  const parts: string[] = []
-  if (payload.step) parts.push(payload.step)
-  if (payload.message) parts.push(payload.message)
-  if (kind === "completed" && payload.summary) parts.push(payload.summary)
-  if (kind === "failed" && payload.error) parts.push(payload.error)
-  if (parts.length === 0) return null
-  return <span className="text-muted-foreground">{parts.join(" — ")}</span>
+  const parts: string[] = [];
+  if (payload.step) parts.push(payload.step);
+  if (payload.message) parts.push(payload.message);
+  if (kind === "completed" && payload.summary) parts.push(payload.summary);
+  if (kind === "failed" && payload.error) parts.push(payload.error);
+  if (parts.length === 0) return null;
+  return <span className="text-muted-foreground">{parts.join(" — ")}</span>;
 }
 
 function ValidationEventBody({
   payload,
 }: {
-  payload: AITaskEventRow["payload"]
+  payload: AITaskEventRow["payload"];
 }) {
-  const isSummary = payload.step === "summary" && !payload.severity
+  const isSummary = payload.step === "summary" && !payload.severity;
   if (isSummary) {
-    const counts: string[] = []
-    if (payload.blocking_count) counts.push(`${payload.blocking_count} blocking`)
-    if (payload.warning_count) counts.push(`${payload.warning_count} warning`)
-    if (payload.info_count) counts.push(`${payload.info_count} info`)
+    const counts: string[] = [];
+    if (payload.blocking_count)
+      counts.push(`${payload.blocking_count} blocking`);
+    if (payload.warning_count) counts.push(`${payload.warning_count} warning`);
+    if (payload.info_count) counts.push(`${payload.info_count} info`);
     return (
       <div className="flex flex-col gap-0.5">
-        <span className="text-foreground">{payload.message ?? "Validation"}</span>
+        <span className="text-foreground">
+          {payload.message ?? "Validation"}
+        </span>
         {counts.length > 0 ? (
           <span className="text-muted-foreground">{counts.join(" · ")}</span>
         ) : null}
       </div>
-    )
+    );
   }
 
   return (
@@ -208,14 +235,16 @@ function ValidationEventBody({
         <span className="text-foreground">{payload.message}</span>
       ) : null}
       {payload.suggestion ? (
-        <span className="text-muted-foreground">Suggestion: {payload.suggestion}</span>
+        <span className="text-muted-foreground">
+          Suggestion: {payload.suggestion}
+        </span>
       ) : null}
     </div>
-  )
+  );
 }
 
 function ResultBlock({ task }: { task: AITaskRow }) {
-  const output = task.output as AITaskResult | null
+  const output = task.output as AITaskResult | null;
 
   if (task.status === "failed") {
     return (
@@ -225,7 +254,7 @@ function ResultBlock({ task }: { task: AITaskRow }) {
           {task.error ?? "Task failed."}
         </div>
       </div>
-    )
+    );
   }
 
   if (!output) {
@@ -240,7 +269,7 @@ function ResultBlock({ task }: { task: AITaskRow }) {
               : "No output produced."}
         </p>
       </div>
-    )
+    );
   }
 
   return (
@@ -251,7 +280,10 @@ function ResultBlock({ task }: { task: AITaskRow }) {
       </div>
       <div className="flex flex-col gap-2.5">
         <SectionLabel>
-          Files <span className="font-mono text-muted-foreground">({output.files.length})</span>
+          Files{" "}
+          <span className="font-mono text-muted-foreground">
+            ({output.files.length})
+          </span>
         </SectionLabel>
         <div className="flex flex-col gap-3">
           {output.files.map((f) => (
@@ -265,7 +297,7 @@ function ResultBlock({ task }: { task: AITaskRow }) {
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 function CodeBlock({
@@ -273,14 +305,16 @@ function CodeBlock({
   language,
   content,
 }: {
-  path: string
-  language: string
-  content: string
+  path: string;
+  language: string;
+  content: string;
 }) {
   return (
     <div className="overflow-hidden rounded-md border border-border bg-background">
       <div className="flex items-center justify-between gap-3 border-b border-border bg-card px-3 py-2">
-        <span className="truncate font-mono text-xs text-foreground">{path}</span>
+        <span className="truncate font-mono text-xs text-foreground">
+          {path}
+        </span>
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
           {language}
         </span>
@@ -289,7 +323,7 @@ function CodeBlock({
         <code>{content}</code>
       </pre>
     </div>
-  )
+  );
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -297,15 +331,46 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
     <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
       {children}
     </span>
-  )
+  );
+}
+
+function RepairTaskControl({
+  task,
+  events,
+  projectId,
+}: {
+  task: AITaskRow;
+  events: EventLike[];
+  projectId: string;
+}) {
+  if (task.status !== "failed") return null;
+  if (!hasBlockingValidationEvidence(events)) return null;
+
+  return (
+    <form action={repairFailedTask}>
+      <input type="hidden" name="task_id" value={task.id} />
+      <input type="hidden" name="project_id" value={projectId} />
+      <Button size="sm" variant="secondary" type="submit">
+        <Wrench className="mr-1.5 h-3.5 w-3.5" />
+        Repair
+      </Button>
+    </form>
+  );
+}
+
+function hasBlockingValidationEvidence(events: EventLike[]): boolean {
+  return events.some(
+    (event) =>
+      event.kind === "validation" && event.payload.severity === "blocking",
+  );
 }
 
 function TaskLifecycleControl({
   task,
   projectId,
 }: {
-  task: AITaskRow
-  projectId: string
+  task: AITaskRow;
+  projectId: string;
 }) {
   // Cancel is only meaningful while the task is still live.
   if (task.status === "pending" || task.status === "running") {
@@ -318,7 +383,7 @@ function TaskLifecycleControl({
           Cancel
         </Button>
       </form>
-    )
+    );
   }
 
   // Failed and cancelled tasks can be retried or deleted.
@@ -342,14 +407,20 @@ function TaskLifecycleControl({
           </Button>
         </form>
       </div>
-    )
+    );
   }
 
-  return null
+  return null;
 }
 
-function RunFromTaskControl({ task, projectId }: { task: AITaskRow; projectId: string }) {
-  if (task.status !== "completed") return null
+function RunFromTaskControl({
+  task,
+  projectId,
+}: {
+  task: AITaskRow;
+  projectId: string;
+}) {
+  if (task.status !== "completed") return null;
 
   if (task.run_session_id) {
     return (
@@ -359,7 +430,7 @@ function RunFromTaskControl({ task, projectId }: { task: AITaskRow; projectId: s
           View run
         </Link>
       </Button>
-    )
+    );
   }
 
   return (
@@ -370,5 +441,5 @@ function RunFromTaskControl({ task, projectId }: { task: AITaskRow; projectId: s
         Run this result
       </Button>
     </form>
-  )
+  );
 }

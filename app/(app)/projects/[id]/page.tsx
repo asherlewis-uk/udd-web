@@ -1,14 +1,16 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, FileText } from "lucide-react";
+import { ArrowRight, FileText, Wrench } from "lucide-react";
 import { AIPromptForm } from "@/components/ai/ai-prompt-form";
 import { TaskPoller } from "@/components/ai/task-poller";
 import { RunPoller } from "@/components/run/run-poller";
+import { repairFailedTask } from "@/app/actions/ai";
 import { startRunAction } from "@/app/actions/run";
 import { createClient } from "@/lib/supabase/server";
 import { formatRelative } from "@/lib/slug";
 import { cn } from "@/lib/utils";
+import { getRepairDisplayPrompt, getRepairMetadata } from "@/lib/ai/repair";
 import { deriveNextAction } from "@/lib/workspace/next-action";
 import {
   getActiveProviderForOwner,
@@ -332,7 +334,23 @@ type GenerationOperation = {
   contextMessage: string;
 };
 
-function generationOperation(kind: AITaskKind): GenerationOperation {
+function generationOperation(
+  kind: AITaskKind,
+  input?: Record<string, unknown> | null,
+): GenerationOperation {
+  if (getRepairMetadata(input)) {
+    return {
+      badge: "Repair run",
+      sentenceName: "The repair run",
+      description:
+        "Repair · stored validation evidence from a failed work item is used to generate corrected files, then the normal validation and persistence gate decides completion.",
+      runningMessage:
+        "UDD is repairing failed generated output from stored validation evidence. Files are saved only after validation and persistence pass.",
+      contextMessage:
+        "UDD is repairing a failed generation run from stored validation evidence. Files are saved only after validation passes.",
+    };
+  }
+
   if (kind === "scaffold") {
     return {
       badge: "Scaffold run",
@@ -407,7 +425,8 @@ function TaskConversationSummary({
   projectId: string;
 }) {
   const output = task.output as AITaskResult | null;
-  const operation = generationOperation(task.kind);
+  const operation = generationOperation(task.kind, task.input);
+  const repairMetadata = getRepairMetadata(task.input);
   const validationSummary = extractValidationSummary(events);
   const latestProgress = latestEventByKind(events, "progress");
   const firstBlockingIssue = events.find(
@@ -439,6 +458,16 @@ function TaskConversationSummary({
       <ConversationFact label="Operation">
         {operation.description}
       </ConversationFact>
+
+      {repairMetadata ? (
+        <ConversationFact label="Repair source">
+          Uses validation evidence from failed work item{" "}
+          <span className="font-mono text-[11px]">
+            {shortTaskId(repairMetadata.source_task_id)}
+          </span>
+          .
+        </ConversationFact>
+      ) : null}
 
       {task.status === "running" && latestProgress?.payload.message ? (
         <ConversationFact label="Progress">
@@ -491,9 +520,18 @@ function TaskConversationSummary({
 
       {task.status === "failed" || task.status === "cancelled" ? (
         <ConversationFact label="Recovery">
-          Review this generation run before retrying or submitting a revised
-          prompt.
+          {hasBlockingValidationEvidence(events)
+            ? "Use the recorded validation evidence to queue a repair run, or inspect the work item before deciding."
+            : "Review this generation run before retrying or submitting a revised prompt."}
         </ConversationFact>
+      ) : null}
+
+      {task.status === "failed" && hasBlockingValidationEvidence(events) ? (
+        <RepairFailedTaskForm
+          taskId={task.id}
+          projectId={projectId}
+          redirectTo={`/projects/${projectId}`}
+        />
       ) : null}
 
       <Link
@@ -719,6 +757,9 @@ function promptForTask(
   task: LatestTask,
   promptsById: Map<string, string>,
 ): string | null {
+  const repairDisplayPrompt = getRepairDisplayPrompt(task.input);
+  if (repairDisplayPrompt) return repairDisplayPrompt;
+
   if (task.prompt_id) {
     const prompt = promptsById.get(task.prompt_id);
     if (prompt?.trim()) return prompt;
@@ -795,6 +836,44 @@ function formatValidationIssue(payload: AITaskEventPayload): string {
   return details || "Blocking validation issue recorded.";
 }
 
+function hasBlockingValidationEvidence(events: AITaskEventRow[]): boolean {
+  return events.some(
+    (event) =>
+      event.kind === "validation" && event.payload.severity === "blocking",
+  );
+}
+
+function shortTaskId(taskId: string): string {
+  return taskId.slice(0, 8);
+}
+
+function RepairFailedTaskForm({
+  taskId,
+  projectId,
+  redirectTo,
+}: {
+  taskId: string;
+  projectId: string;
+  redirectTo?: string;
+}) {
+  return (
+    <form action={repairFailedTask} className="pt-1">
+      <input type="hidden" name="task_id" value={taskId} />
+      <input type="hidden" name="project_id" value={projectId} />
+      {redirectTo ? (
+        <input type="hidden" name="redirect_to" value={redirectTo} />
+      ) : null}
+      <button
+        type="submit"
+        className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+      >
+        <Wrench className="h-3.5 w-3.5" />
+        Repair with evidence
+      </button>
+    </form>
+  );
+}
+
 function groupTaskEvents(
   events: AITaskEventRow[],
 ): Map<string, AITaskEventRow[]> {
@@ -829,11 +908,29 @@ function AssistantMessageBubble({
   const isLocalAction =
     action.cta.href === aiHref || action.cta.href === `/projects/${projectId}`;
   const isValidationStart = action.cta.label === "Start validation check";
+  const isRepairAction = action.cta.action === "repair" && action.cta.taskId;
 
   return (
     <div className="flex items-baseline gap-2 py-1 text-sm text-muted-foreground/80">
       <span className="leading-relaxed">{action.description}</span>
-      {isValidationStart ? (
+      {isRepairAction ? (
+        <form action={repairFailedTask} className="contents">
+          <input type="hidden" name="task_id" value={action.cta.taskId} />
+          <input type="hidden" name="project_id" value={projectId} />
+          <input
+            type="hidden"
+            name="redirect_to"
+            value={`/projects/${projectId}`}
+          />
+          <button
+            type="submit"
+            className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            {action.cta.label}
+            <Wrench className="h-3 w-3" />
+          </button>
+        </form>
+      ) : isValidationStart ? (
         <form action={startRunAction} className="contents">
           <input type="hidden" name="project_id" value={projectId} />
           <button
@@ -1003,7 +1100,7 @@ function FileSummaryView({
 }
 
 function WorkingStateView({ task }: { task: LatestTask }) {
-  const operation = generationOperation(task.kind);
+  const operation = generationOperation(task.kind, task.input);
 
   return (
     <div className="flex min-h-full flex-col justify-center px-6 py-6 text-sm">
