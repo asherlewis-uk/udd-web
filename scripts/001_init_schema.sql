@@ -208,7 +208,7 @@ create policy "ai_task_events_delete_own" on public.ai_task_events
 
 -- ----------------------------------------------------------------------------
 -- run_sessions
--- A hosted run/preview session for a project.
+-- A bounded run/local-preview session for a project.
 -- ----------------------------------------------------------------------------
 create table if not exists public.run_sessions (
   id uuid primary key default gen_random_uuid(),
@@ -276,7 +276,7 @@ create policy "run_events_delete_own" on public.run_events
 
 -- ----------------------------------------------------------------------------
 -- previews
--- Saved preview snapshots (thumbnail, public url, associated run session).
+-- Forward-looking saved preview snapshots (thumbnail, URL, associated run session).
 -- ----------------------------------------------------------------------------
 create table if not exists public.previews (
   id uuid primary key default gen_random_uuid(),

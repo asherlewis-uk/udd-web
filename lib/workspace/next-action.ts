@@ -34,6 +34,7 @@ export type ValidationSummary = {
 export type RunSession = {
   id: string;
   status: RunStatus;
+  preview_url?: string | null;
   started_at: string | null;
   created_at: string | null;
   stopped_at?: string | null;
@@ -42,6 +43,7 @@ export type RunSession = {
 
 export type RuntimeSummary = {
   hasCleanValidationEvent: boolean;
+  hasLivePreviewEvent: boolean;
   latestErrorMessage: string | null;
 };
 
@@ -145,8 +147,8 @@ export function deriveNextAction(input: {
       code: "validate_orphaned_files",
       href: runHref,
       reason:
-        "project_files contains saved files, but there is no ai_tasks row to explain their last generation. Parser validation can inspect the saved files directly.",
-      description: `${projectFilesCount} saved file${plural(projectFilesCount)} exist without generation history. Start a validation check before continuing.`,
+        "project_files contains saved files, but there is no ai_tasks row to explain their last generation. The runtime can validate those files and start a local preview if their shape supports it.",
+      description: `${projectFilesCount} saved file${plural(projectFilesCount)} exist without generation history. Start a local preview check before continuing.`,
     });
   }
 
@@ -339,15 +341,20 @@ export function deriveNextAction(input: {
   ) {
     return {
       code: "runtime_in_progress",
-      label: "Validation check in progress",
+      label:
+        latestRunSession.status === "stopping"
+          ? "Stopping local preview"
+          : "Starting local preview",
       description:
-        "UDD is checking saved files with a parser. It validates files only; nothing is served or previewed.",
+        latestRunSession.status === "stopping"
+          ? "UDD is stopping the local preview process and cleaning up its temporary workspace."
+          : "UDD is validating saved files and starting a bounded local preview when the project shape supports it.",
       cta: {
-        label: "Inspect validation check",
+        label: "Inspect run",
         href: runHref,
         action: "inspect_runtime",
       },
-      reason: `The latest run_sessions row is ${latestRunSession.status}. Runtime work is parser validation only, and preview_url remains null.`,
+      reason: `The latest run_sessions row is ${latestRunSession.status}. Runtime work includes parser validation, temp workspace assembly, and a local preview process only after validation passes.`,
       state: "in_progress",
     };
   }
@@ -363,8 +370,8 @@ export function deriveNextAction(input: {
       code: "validation_stale",
       href: runHref,
       reason:
-        "The latest run session was recorded before the newest saved file or completed task. It does not validate the current project_files state.",
-      description: `${projectFilesCount} saved file${plural(projectFilesCount)} changed after the last validation check. Start a fresh parser check.`,
+        "The latest run session was recorded before the newest saved file or completed task. It does not represent the current project_files state.",
+      description: `${projectFilesCount} saved file${plural(projectFilesCount)} changed after the last run. Start a fresh local preview check.`,
     });
   }
 
@@ -382,25 +389,25 @@ export function deriveNextAction(input: {
         code: "runtime_error_without_files",
         label: "Start a generation run",
         description:
-          "The last validation check found no files to validate. Describe a scaffold or edit to create saved files first.",
+          "The last run found no saved files to validate or preview. Describe a scaffold or edit to create saved files first.",
         cta: {
           label: "Use prompt box",
           href: cockpitHref,
           action: "local_prompt",
         },
         reason:
-          "The latest run_sessions row is error and project_files is empty, so another validation check cannot produce useful output until files exist.",
+          "The latest run_sessions row is error and project_files is empty, so another runtime start cannot produce useful output until files exist.",
         state: "blocked",
       };
     }
 
     return {
       code: "runtime_error_with_files",
-      label: "Review validation output",
+      label: "Review run output",
       description:
-        "The last parser validation check failed. Inspect the recorded output, then submit an edit prompt here if files need changes.",
+        "The last run failed during validation, workspace setup, startup, or runtime. Inspect the recorded output, then submit an edit prompt here if files need changes.",
       cta: {
-        label: "Inspect validation check",
+        label: "Inspect run",
         href: runHref,
         action: "inspect_runtime",
       },
@@ -419,9 +426,9 @@ export function deriveNextAction(input: {
       code: "validation_stopped_incomplete",
       href: runHref,
       reason:
-        "The latest run session was stopped and has no persisted clean-validation event. Current files still need a parser check.",
+        "The latest run session was stopped and has no persisted clean-validation or preview-ready event. Current files still need a runtime check.",
       description:
-        "The last validation check stopped before a clean result was recorded. Start another parser check for the saved files.",
+        "The last run stopped before a clean preview result was recorded. Start another local preview check for the saved files.",
     });
   }
 
@@ -430,8 +437,8 @@ export function deriveNextAction(input: {
     return startValidationAction({
       code: "validate_warnings",
       href: runHref,
-      reason: `The completed task recorded ${warnings} validation warning${plural(warnings)}. Warnings do not block save, but parser validation can inspect the saved files.`,
-      description: `The ${operation.name} saved files with ${warnings} warning${plural(warnings)}. Start a validation check to review per-file parser results.`,
+      reason: `The completed task recorded ${warnings} validation warning${plural(warnings)}. Warnings do not block save, but runtime validation and local preview startup can inspect the saved files.`,
+      description: `The ${operation.name} saved files with ${warnings} warning${plural(warnings)}. Start a local preview check to review real runtime output.`,
     });
   }
 
@@ -441,7 +448,7 @@ export function deriveNextAction(input: {
       href: runHref,
       reason:
         "The latest task completed and project_files has saved files, but no run_sessions row exists for this project.",
-      description: `${projectFilesCount} saved file${plural(projectFilesCount)} from the ${operation.name} are ready. Start a validation check to confirm parser results.`,
+      description: `${projectFilesCount} saved file${plural(projectFilesCount)} from the ${operation.name} are ready. Start a local preview check to validate and run them when supported.`,
     });
   }
 
@@ -457,10 +464,12 @@ export function deriveNextAction(input: {
     code: "continue_building",
     label: "Continue building",
     description:
-      latestRunSummary?.hasCleanValidationEvent ||
-      latestRunSession.status === "running"
-        ? `${projectFilesCount} saved file${plural(projectFilesCount)} passed the validation check. Describe the next change to keep going.`
-        : "Submit a new scaffold, edit, or refactor prompt to continue the project.",
+      latestRunSession.status === "running" && latestRunSession.preview_url
+        ? `${projectFilesCount} saved file${plural(projectFilesCount)} are running in a local preview. Describe the next change to keep going.`
+        : latestRunSummary?.hasLivePreviewEvent ||
+            latestRunSummary?.hasCleanValidationEvent
+          ? `${projectFilesCount} saved file${plural(projectFilesCount)} passed the runtime check. Describe the next change to keep going.`
+          : "Submit a new scaffold, edit, or refactor prompt to continue the project.",
     cta: { label: "Use prompt box", href: cockpitHref, action: "local_prompt" },
     reason:
       "The latest task completed, saved files exist, and no newer unvalidated file state is detected. The next generation step must be user-initiated.",
@@ -481,10 +490,10 @@ function startValidationAction(args: {
 }): NextAction {
   return {
     code: args.code,
-    label: "Start validation check",
+    label: "Start local preview",
     description: args.description,
     cta: {
-      label: "Start validation check",
+      label: "Start local preview",
       href: args.href,
       action: "start_validation",
     },

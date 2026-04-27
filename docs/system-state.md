@@ -134,23 +134,29 @@ Source: lib/ai/service.ts:394–425, lib/ai/repair.ts:42–44
 
 ### Runtime named constants
 
-| Constant           | Value               | Source                     |
-| ------------------ | ------------------- | -------------------------- |
-| `STALE_SESSION_MS` | 600 000 ms (10 min) | lib/runtime/service.ts:279 |
+| Constant                   | Value               | Source                          |
+| -------------------------- | ------------------- | ------------------------------- |
+| `STALE_SESSION_MS`         | 600 000 ms (10 min) | lib/runtime/service.ts:331      |
+| `PREVIEW_START_TIMEOUT_MS` | 30 000 ms (30 sec)  | lib/runtime/local-preview.ts:13 |
+| `PREVIEW_TTL_MS`           | 600 000 ms (10 min) | lib/runtime/local-preview.ts:14 |
+| `MAX_RUNTIME_FILE_COUNT`   | 120 files           | lib/runtime/local-preview.ts:15 |
+| `MAX_RUNTIME_BYTES`        | 2 097 152 bytes     | lib/runtime/local-preview.ts:16 |
 
 ### State machine
 
 ```text
-[none]           → starting   startRun inserts with status='starting' (lib/runtime/service.ts:28–36)
-starting         → running    all files parse cleanly (lib/runtime/service.ts:226–237)
-starting         → error      any file fails to parse (lib/runtime/service.ts:186–209)
-starting         → error      no files found after loading (lib/runtime/service.ts:138–143)
-running/starting → stopping   stopRun conditional update (lib/runtime/service.ts:76–83)
-stopping         → stopped    stopRun second conditional update (lib/runtime/service.ts:101–105)
-starting/running → error      stale reaper after STALE_SESSION_MS from started_at (lib/runtime/service.ts:286–307)
+[none]           → starting   startRun inserts with status='starting', preview_url=null, error=null (lib/runtime/service.ts:16–58)
+starting         → running    files parse cleanly, local Next preview starts, HTTP readiness succeeds, and preview_url is persisted (lib/runtime/service.ts:245–295; lib/runtime/local-preview.ts:59–129)
+starting         → error      no files found after loading (lib/runtime/service.ts:165–170)
+starting         → error      any file fails to parse (lib/runtime/service.ts:218–238)
+starting         → error      unsupported preview shape, unsupported dependency, startup timeout, or process exit before readiness (lib/runtime/local-preview.ts:218–252, 431–465; lib/runtime/service.ts:305–322)
+running          → error      local preview process exits outside an explicit stop flow (lib/runtime/service.ts:388–414)
+running/starting → stopping   stopRun conditional update (lib/runtime/service.ts:78–104)
+stopping         → stopped    stopRun kills the preview process, removes the temp workspace, clears preview_url, and writes stopped_at (lib/runtime/service.ts:114–131; lib/runtime/local-preview.ts:133–144)
+starting/running → error      stale reaper after STALE_SESSION_MS from started_at; it also attempts preview cleanup first (lib/runtime/service.ts:338–385)
 ```
 
-All transitions are conditional updates that no-op if a concurrent driver has already moved the session. (lib/runtime/service.ts:76–83, 101–105, 186–209, 226–237)
+All terminal/promoting transitions are conditional updates that no-op if a concurrent driver or stop action has already moved the session. (lib/runtime/service.ts:94–104, 119–131, 218–232, 275–287, 393–405)
 
 ### File loading and fallback
 
@@ -172,13 +178,27 @@ Source: lib/runtime/executor.ts:87, 99–134
 
 ### `preview_url` behavior
 
-`run_sessions.preview_url` is **always `null`** at runtime. No code in the runtime pipeline writes to this column. (lib/runtime/service.ts:212–216)
+`run_sessions.preview_url` is `null` when a run is queued, validating, stopped, or errored. It is written only after `startNextDevPreview` has started a real `next dev` process on `127.0.0.1`, the readiness probe has received an HTTP response, and `driveSession` conditionally promotes the session to `status='running'`. (lib/runtime/service.ts:245–295; lib/runtime/local-preview.ts:59–129)
 
-The comment at lib/runtime/service.ts:212–216 states:
+The stored URL is a real local endpoint of the form `http://127.0.0.1:<port>`, not a synthetic preview hostname. The helper allocates an available local port and the launcher starts Next with `--hostname 127.0.0.1 --port <port>`. (lib/runtime/local-preview.ts:68–79, 473–488, 573–585)
 
-> "No preview URL is written: nothing is actually served, and a synthetic URL would violate the Preview Truth invariant in CLAUDE.md. preview_url stays NULL."
+The Run page selects `preview_url` and passes it to `PreviewPanel`; `PreviewPanel` embeds an iframe only when `status === 'running'` and a URL exists. If a session is marked running with no URL, the panel shows a missing-endpoint error instead of implying a live preview. (app/(app)/projects/[id]/run/page.tsx:37–100; components/run/preview-panel.tsx:22–57)
 
-Nothing is booted, served, or previewed by the runtime pipeline.
+Stop, stale cleanup, startup failure, parser failure, and process-exit failure all clear `preview_url`. (lib/runtime/service.ts:119–126, 218–232, 305–322, 367–373, 393–400)
+
+### Supported local preview shape and boundaries
+
+The bounded preview path is currently Next App Router only. Saved files must include `package.json`, `app/layout.{tsx,ts,jsx,js}`, and root `app/page.{tsx,ts,jsx,js}`. `package.json` must declare `next`, `react`, and `react-dom`. (lib/runtime/local-preview.ts:20, 217–251)
+
+The runtime does not install packages. Declared dependencies must already be available in UDD's own installed dependencies, otherwise startup fails visibly before a process is launched. (lib/runtime/local-preview.ts:239–244, 279–286)
+
+Before writing the temp workspace, runtime file paths are normalized and rejected if they are absolute, escape the project, contain NUL, or target reserved directories such as `node_modules`, `.git`, or `.next`. (lib/runtime/local-preview.ts:205–215, 293–315)
+
+The workspace is created under the OS temp directory, receives only the saved files plus runtime-only support files when needed (`tsconfig.json`, `next-env.d.ts`, and Tailwind PostCSS config), and symlinks UDD's existing `node_modules`. No shell command or dependency install is run. (lib/runtime/local-preview.ts:148–198, 319–385)
+
+The child process environment is scrubbed to a minimal set of variables, binds to `127.0.0.1`, disables Next telemetry, and uses a launcher that exits on TTL expiry or parent-process disappearance. (lib/runtime/local-preview.ts:396–408, 573–616)
+
+This is a local development preview only. The runtime binds to `127.0.0.1`, the UI embeds only the recorded local URL, and no code claims deployment, production hosting, public hosting, or external infrastructure. (lib/runtime/local-preview.ts:68–79, 573–585; components/run/preview-panel.tsx:33–57)
 
 ---
 
@@ -236,7 +256,8 @@ Each surface below is labeled **schema only — no app code callers**.
 | `previews` table                     | scripts/001_init_schema.sql  | schema only — no app code callers               | Verified by reading all files in lib/ and app/actions/ |
 | `provider_configs.secret_ref` column | scripts/001_init_schema.sql  | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql               |
 | `user_secrets` table                 | scripts/005_user_secrets.sql | active — read/write by lib/secrets/index.ts     | lib/secrets/index.ts, app/actions/secrets.ts           |
-| `run_sessions.preview_url` column    | scripts/001_init_schema.sql  | schema only — always null — no app code callers | lib/runtime/service.ts:212–216                         |
+
+`run_sessions.preview_url` is active application schema. It stores only a real local preview endpoint after readiness succeeds, and it is cleared on stop, stale cleanup, and errors. (lib/runtime/service.ts:275–295, 119–126, 367–373, 393–400)
 
 From scripts/004_document_forward_looking.sql:
 
@@ -280,7 +301,7 @@ Pending and running copy is status-backed; running progress uses the latest pers
 
 While a cockpit submit server action is pending, the prompt form shows a local optimistic “Queuing generation run” echo with the prompt text and the same pure prompt classifier used by task creation. That optimistic echo is active UI state only; it is cleared on server-action error, and reload still reconstructs history from persisted records. (components/ai/ai-prompt-form.tsx:72–87, 95–97, 130–138, 155–202)
 
-Validation-check conversation entries are derived from recent `run_sessions` and grouped `run_events`. Their copy describes parser validation only and explicitly says no app is served or previewed while showing the latest relevant persisted parser output. (app/(app)/projects/[id]/page.tsx:508–552, 693–714, 758–771)
+Runtime conversation entries are derived from recent `run_sessions` and grouped `run_events`. Their copy describes a local preview run as parser validation, temporary workspace assembly, and local Next dev startup. Running copy includes the real local URL when `preview_url` is present and explicitly says the preview is not deployment or production hosting. (app/(app)/projects/[id]/page.tsx:592–612, 754–772)
 
 The cockpit pollers remain refresh-based: polling is active when any recent task is `pending`/`running` or any recent run session is `starting`/`running`/`stopping`, then `TaskPoller` and `RunPoller` re-fetch the server component tree. (app/(app)/projects/[id]/page.tsx:196–204, 249–250; components/ai/task-poller.tsx:14–20; components/run/run-poller.tsx:14–20)
 
@@ -288,11 +309,11 @@ The cockpit pollers remain refresh-based: polling is active when any recent task
 
 `deriveNextAction` is a pure deterministic function. It consumes only already-loaded persisted state: `projects.status`, the latest `ai_tasks` row, the latest validation summary from `ai_task_events`, `project_files` count and newest `updated_at`, the latest `run_sessions` row, a run-event summary from `run_events`, and active provider readiness from encrypted-secret presence plus environment fallback detection. It returns a stable `code`, compact description, explicit CTA action kind, and plain-English `reason`. (lib/workspace/next-action.ts:43–124; app/(app)/projects/[id]/page.tsx:175–232, 840–851)
 
-Provider-blocked recommendations are emitted only when the next useful step would require AI generation and the selected provider has neither a saved credential nor AI Gateway environment fallback. The recovery path is the existing inline cockpit credential control; no BYOK, runtime, preview, deploy, or repair behavior is suggested unless its implemented state/action exists. (lib/workspace/next-action.ts:151–169, 216–263, 484–513; components/ai/ai-prompt-form.tsx:203–294)
+Provider-blocked recommendations are emitted only when the next useful step would require AI generation and the selected provider has neither a saved credential nor AI Gateway environment fallback. The recovery path is the existing inline cockpit credential control; no BYOK, runtime, preview, deploy, or repair behavior is suggested unless its implemented state/action exists. (lib/workspace/next-action.ts:151–169, 216–263, 479–513; components/ai/ai-prompt-form.tsx:203–294)
 
-Generation inspection routes only to detail surfaces: queued/running generation work and data inconsistencies link to the AI task detail, while runtime/parser failures link to the Run surface. Start/continue generation remains local to the prompt box, parser validation starts inline via `startRunAction`, repair starts inline via `repairFailedTask`, and non-validation failed tasks retry inline via `retryFailedTask` when provider readiness allows it. (lib/workspace/next-action.ts:176–204, 252–263, 296–327, 361–396, 439–456; app/(app)/projects/[id]/page.tsx:938–1009)
+Generation inspection routes only to detail surfaces: queued/running generation work and data inconsistencies link to the AI task detail, while runtime failures link to the Run surface. Start/continue generation remains local to the prompt box, local preview checks start inline via `startRunAction`, repair starts inline via `repairFailedTask`, and failed tasks retry inline via `retryFailedTask` when provider readiness allows it. (lib/workspace/next-action.ts:176–204, 252–263, 296–327, 361–411, 437–495; app/(app)/projects/[id]/page.tsx:940–1011)
 
-Validation recommendations are freshness-aware. If saved files exist without a task row, if no run session exists after a completed task, if the latest run predates the newest saved file or completed task, or if a stopped run lacks a clean-validation event, the cockpit recommends starting parser validation inline. A clean `running` run session or clean-validation event allows the cockpit to recommend continuing generation, subject to provider readiness. (lib/workspace/next-action.ts:141–149, 347–415, 418–433, 439–456; app/(app)/projects/[id]/page.tsx:204–232, 840–851)
+Runtime recommendations are freshness-aware. If saved files exist without a task row, if no run session exists after a completed task, if the latest run predates the newest saved file or completed task, or if a stopped run lacks clean validation/preview evidence, the cockpit recommends starting a local preview check inline. A running session with `preview_url`, a live-preview event, or a clean-validation event allows the cockpit to recommend continuing generation, subject to provider readiness. (lib/workspace/next-action.ts:141–149, 347–425, 437–495; app/(app)/projects/[id]/page.tsx:204–232, 852–856)
 
 ---
 
@@ -310,8 +331,8 @@ All of the following require an explicit user action (form submission or button 
 | Repair a failed validation task      | `repairFailedTask`       | app/actions/ai.ts:272 |
 | Cancel a `pending` or `running` task | `cancelAITask`           | app/actions/ai.ts:138 |
 | Delete a terminal-state task         | `deleteAITask`           | app/actions/ai.ts:165 |
-| Start a run session                  | `startRunAction`         | app/actions/run.ts:13 |
-| Stop a run session                   | `stopRunAction`          | app/actions/run.ts:32 |
+| Start a local preview run            | `startRunAction`         | app/actions/run.ts:13 |
+| Stop a local preview run             | `stopRunAction`          | app/actions/run.ts:32 |
 | Start a run from a completed AI task | `startRunFromTaskAction` | app/actions/run.ts:49 |
 
 `retryFailedTask` keeps its default AI-detail redirect, but the cockpit may pass `redirect_to=/projects/[id]` so an inline retry returns to the cockpit. The action accepts only that exact same-project cockpit URL for same-page return; otherwise it redirects to the new AI task detail as before. (app/actions/ai.ts:209–260; app/(app)/projects/[id]/page.tsx:967–984)
@@ -339,7 +360,8 @@ All of the following require an explicit user action (form submission or button 
 
 - No cron jobs exist in the codebase.
 - No background workers, queue consumers, or event listeners exist.
-- No automatic task-to-run chaining: a run session is created only when the user explicitly calls `startRunAction` or `startRunFromTaskAction`. (app/actions/run.ts:13, 49)
+- No automatic task-to-run chaining: a run session and local preview attempt are created only when the user explicitly calls `startRunAction` or `startRunFromTaskAction`. (app/actions/run.ts:13, 49)
+- No deployment, production hosting, public preview URL, or external serving infrastructure is created by the runtime path. The only preview endpoint is a local `127.0.0.1` dev server URL after process readiness succeeds. (lib/runtime/local-preview.ts:68–79, 573–585; lib/runtime/service.ts:275–295)
 - No automatic fail-to-retry or fail-to-repair: a failed task is retried only when the user explicitly calls `retryFailedTask`, and repaired only when the user explicitly calls `repairFailedTask`. Repair creation also fails unless stored blocking validation evidence and staged output exist. (app/actions/ai.ts:189, app/actions/ai.ts:262–308)
 - No autonomous agent behavior exists in the codebase.
 
@@ -371,11 +393,11 @@ For `kind='scaffold'`, paths not present in the generated output are pruned from
 
 _Why_: "Scaffold" means a full re-layout. Treating it as additive would silently accumulate stale paths from prior scaffold runs, producing a mixed-generation file set the user did not request.
 
-**4. `run_sessions.preview_url` must remain `null` until real serving infrastructure exists.**
+**4. `run_sessions.preview_url` must only represent a real reachable local preview process.**
 
-No code may write a synthetic, placeholder, or local URL to this column. (lib/runtime/service.ts:212–216)
+No code may write a synthetic, placeholder, public, or deployment URL to this column. The runtime writes `preview_url` only after `startNextDevPreview` starts a local Next process and readiness probing succeeds; stop, stale cleanup, and error paths clear it. (lib/runtime/service.ts:258–295, 119–126, 367–373, 393–400; lib/runtime/local-preview.ts:59–129)
 
-_Why_: Writing a fake URL violates the Preview Truth invariant in CLAUDE.md §Product Truth Contract. The column exists as forward-looking schema surface only.
+_Why_: Writing a fake URL violates the Preview Truth invariant in CLAUDE.md §Product Truth Contract. A URL in this column is user-visible proof that a bounded local preview was actually started and reached.
 
 **5. `after()` must be used for all AI and runtime background work.**
 

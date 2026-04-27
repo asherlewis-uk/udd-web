@@ -43,6 +43,7 @@ type LatestRunSession = RunSession & {
   created_at: string;
   stopped_at?: string | null;
   error?: string | null;
+  preview_url?: string | null;
 };
 
 type PromptRow = {
@@ -105,7 +106,9 @@ export default async function WorkspacePage({
       .limit(6),
     supabase
       .from("run_sessions")
-      .select("id, status, started_at, stopped_at, created_at, error")
+      .select(
+        "id, status, started_at, stopped_at, created_at, error, preview_url",
+      )
       .eq("project_id", id)
       .eq("owner_id", user.id)
       .order("created_at", { ascending: false })
@@ -590,7 +593,8 @@ function RunConversationSummary({
       </div>
       <p className="text-foreground">{runStatusMessage(session)}</p>
       <ConversationFact label="Operation">
-        Validation check · parser validation of saved files only.
+        Local preview run · parser validation, temporary workspace assembly, and
+        local Next dev startup when the saved project shape supports it.
       </ConversationFact>
       {highlight ? (
         <ConversationFact
@@ -609,7 +613,7 @@ function RunConversationSummary({
         href={`/projects/${projectId}/run`}
         className="w-fit text-xs font-medium text-foreground underline-offset-4 hover:underline"
       >
-        Inspect validation check
+        Inspect run
       </Link>
     </div>
   );
@@ -698,11 +702,11 @@ function ValidationCheckStatusBadge({
 }) {
   const labels: Record<LatestRunSession["status"], string> = {
     idle: "idle",
-    starting: "validating",
-    running: "validated",
+    starting: "starting preview",
+    running: "preview running",
     stopping: "stopping",
     stopped: "stopped",
-    error: "validation failed",
+    error: "run failed",
   };
   const tone =
     status === "running"
@@ -752,26 +756,28 @@ function taskStatusMessage(
 
 function runStatusMessage(session: LatestRunSession): string {
   if (session.status === "starting") {
-    return "UDD is parsing saved files for a validation check. No app is served or previewed.";
+    return "UDD is validating saved files and trying to start a bounded local preview.";
   }
 
   if (session.status === "running") {
-    return "Saved files parsed cleanly. This is validation only; no app is served or previewed.";
+    return session.preview_url
+      ? `A local dev preview is running at ${session.preview_url}. This is not deployment or production hosting.`
+      : "This run is marked active, but no preview URL is recorded. Inspect the run logs.";
   }
 
   if (session.status === "stopping") {
-    return "The validation check is stopping.";
+    return "The local preview process is stopping and its temporary workspace is being cleaned up.";
   }
 
   if (session.status === "stopped") {
-    return "The parser validation check was stopped.";
+    return "The local preview run was stopped and cleaned up.";
   }
 
   if (session.status === "error") {
-    return "The parser validation check ended with an error recorded by the parser or file loader.";
+    return "The run ended with a validation, startup, dependency, or runtime error.";
   }
 
-  return "No validation check is active.";
+  return "No local preview run is active.";
 }
 
 function promptForTask(
@@ -831,7 +837,9 @@ function runEventHighlight(
   if (session.status === "running") {
     return (
       latestRunEventMatching(events, (event) =>
-        /Validation complete|Parsed cleanly/i.test(event.message),
+        /Local preview ready|Validation passed|Parsed cleanly/i.test(
+          event.message,
+        ),
       ) ?? events[events.length - 1]
     );
   }
@@ -844,7 +852,13 @@ function summarizeRuntimeEvents(events: RunEventRow[]): RuntimeSummary {
     hasCleanValidationEvent: events.some(
       (event) =>
         event.level !== "error" &&
-        /Validation complete|Build succeeded/i.test(event.message),
+        /Validation passed|Build succeeded|Validation complete/i.test(
+          event.message,
+        ),
+    ),
+    hasLivePreviewEvent: events.some(
+      (event) =>
+        event.level !== "error" && /Local preview ready/i.test(event.message),
     ),
     latestErrorMessage:
       latestRunEventMatching(events, (event) => event.level === "error")
@@ -989,7 +1003,7 @@ function AssistantMessageBubble({
             type="submit"
             className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
           >
-            Start validation check
+            {action.cta.label}
             <ArrowRight className="h-3 w-3" />
           </button>
         </form>
@@ -1082,13 +1096,22 @@ function RunStatusView({
     <div className="flex min-h-full flex-col px-6 py-6 text-sm">
       {isActive ? (
         <p className="leading-relaxed text-muted-foreground">
-          Validating saved files…
+          {session.status === "stopping"
+            ? "Stopping local preview and cleaning up workspace..."
+            : "Validating saved files and starting local preview..."}
         </p>
       ) : (
         <>
           <p className="leading-relaxed text-muted-foreground">
-            Saved files for {project.name} parsed cleanly.
+            {session.preview_url
+              ? `Local preview for ${project.name} is running.`
+              : `Saved files for ${project.name} passed the latest runtime check.`}
           </p>
+          {session.preview_url ? (
+            <p className="mt-3 break-all font-mono text-xs text-muted-foreground">
+              {session.preview_url}
+            </p>
+          ) : null}
           <p className="mt-3 text-xs text-muted-foreground">
             Checked {formatRelative(session.started_at)}
           </p>

@@ -55,7 +55,7 @@ This contract overrides all scoped task instructions.
 
 ## Project
 
-UDD ("Universal Dev Desktop") is a single-user Next.js app that turns ideas into working codebases. A user drafts a project, runs AI tasks against it, and executes those generated files in a lightweight runtime that validates them with a real parser.
+UDD ("Universal Dev Desktop") is a single-user Next.js app that turns ideas into working codebases. A user drafts a project, runs AI tasks against it, and executes those generated files in a lightweight runtime that validates them with a real parser before starting a bounded local preview when the saved project shape supports it.
 
 ## Commands
 
@@ -110,7 +110,8 @@ Swapping model: set `UDD_AI_PROVIDER=openai|anthropic`. Adding a provider = add 
 Flow: `startRunAction` → `startRun(projectId)` inserts `run_sessions (status='starting')` → `after(() => driveSession(sessionId))` → poller picks up.
 
 - `lib/runtime/executor.ts` — pure: `loadProjectFiles` (falls back to latest completed AI task's output if `project_files` is empty), `analyzeFile` (real syntactic check: `JSON.parse` for `.json`, `@babel/parser` with `typescript` + `jsx` + `decorators-legacy` for `.js/.jsx/.ts/.tsx/.mjs/.cjs`, byte-count only for anything else).
-- `lib/runtime/service.ts` — `startRun` / `driveSession` / `stopRun`. Writes `run_events` rows that reflect actual parse outcomes (`ok path bytes` / `FAIL path: message`). Any parse failure transitions the session to `status='error'`. The runtime is validation-only — nothing is served or previewed. `run_sessions.preview_url` remains `NULL`; writing a synthetic URL is forbidden by the Preview Truth invariant above.
+- `lib/runtime/local-preview.ts` — server-only bounded local preview helper. It writes validated saved files into an OS temp workspace, rejects unsafe paths and unsupported project shapes, symlinks the app's installed `node_modules`, starts `next dev` on `127.0.0.1` with a scrubbed environment, captures stdout/stderr, waits for a real HTTP response, and cleans up on stop/stale timeout.
+- `lib/runtime/service.ts` — `startRun` / `driveSession` / `stopRun`. Writes `run_events` rows that reflect actual parse outcomes (`ok path bytes` / `FAIL path: message`), workspace preparation, process output, readiness, failures, and cleanup. Any parse, shape, dependency, startup, or runtime failure transitions the session to `status='error'`. `run_sessions.preview_url` is written only after a real local preview process is reachable; otherwise it remains `NULL`.
 - `startRunFromTaskAction` (in `app/actions/run.ts`) reuses the linked `run_session_id` if it's still live, otherwise starts a new one and writes the link back.
 
 ### Background work pattern
@@ -145,6 +146,7 @@ Before modifying any behavior described in `docs/system-state.md`:
 This applies to: AI pipeline, validation layer, runtime pipeline, execution semantics, and schema surfaces with no callers.
 
 <!-- gitnexus:start -->
+
 # GitNexus — Code Intelligence
 
 This project is indexed by GitNexus as **udd-web** (1583 symbols, 3040 relationships, 79 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
@@ -168,22 +170,22 @@ This project is indexed by GitNexus as **udd-web** (1583 symbols, 3040 relations
 
 ## Resources
 
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/udd-web/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/udd-web/clusters` | All functional areas |
-| `gitnexus://repo/udd-web/processes` | All execution flows |
-| `gitnexus://repo/udd-web/process/{name}` | Step-by-step execution trace |
+| Resource                                 | Use for                                  |
+| ---------------------------------------- | ---------------------------------------- |
+| `gitnexus://repo/udd-web/context`        | Codebase overview, check index freshness |
+| `gitnexus://repo/udd-web/clusters`       | All functional areas                     |
+| `gitnexus://repo/udd-web/processes`      | All execution flows                      |
+| `gitnexus://repo/udd-web/process/{name}` | Step-by-step execution trace             |
 
 ## CLI
 
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+| Task                                         | Read this skill file                                        |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md`       |
+| Blast radius / "What breaks if I change X?"  | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?"             | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md`       |
+| Rename / extract / split / refactor          | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md`     |
+| Tools, resources, schema reference           | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md`           |
+| Index, status, clean, wiki CLI commands      | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md`             |
 
 <!-- gitnexus:end -->
