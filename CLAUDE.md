@@ -9,35 +9,44 @@ This system must never misrepresent its behavior to the user.
 The following invariants must always hold. Any change that violates them is invalid.
 
 ### 1. Execution Truth
+
 - The system must not claim to run, build, serve, or deploy code unless real execution infrastructure exists and is used.
 - If only validation/parsing is performed, all user-facing language must reflect validation, not execution.
 
 ### 2. Preview Truth
+
 - The system must not display or imply a live preview unless a real running instance exists.
 - Synthetic URLs (e.g. preview.local) must never be shown as if they are real endpoints.
 
 ### 3. Completion Truth
+
 - No task may be marked "completed" unless all durable side effects required for user-visible state are successfully persisted.
 - Partial success must be surfaced as failure, not success.
 
 ### 4. Provider Truth
+
 - The system must not imply that user-provided API keys are stored or used unless secure storage is implemented.
 - Provider selection may be saved, but credentials must be described accurately as environment-managed if that is the case.
 
 ### 5. UI Copy Truth
+
 - All UI copy must accurately describe the current behavior of the system.
 - Any stale or simulated language must be removed immediately when behavior becomes real.
 - Any real behavior must not be described as simulated.
 
 ### 6. No Silent Deception
+
 - The system must not fabricate success states, URLs, logs, or outputs that imply functionality that does not exist.
 - Logs and events must reflect actual operations performed.
 
 ### 7. Regression Rule
+
 - If a change reintroduces previously removed misleading behavior, it must be treated as a bug and corrected immediately.
 
 ### Enforcement
+
 Before completing any task:
+
 - Verify that no code, UI, or logs violate the above invariants.
 - If a violation is detected, fix it before proceeding.
 - Do not defer truth fixes to later passes.
@@ -127,6 +136,7 @@ Every long-running operation uses `after()` from `next/server` so the action ret
 ## system-state.md Enforcement
 
 Before modifying any behavior described in `docs/system-state.md`:
+
 - Read the relevant section of `docs/system-state.md`.
 - Confirm the section accurately reflects current source.
 - If the behavior is altered by the change, update `docs/system-state.md` in the same commit.
@@ -135,6 +145,7 @@ Before modifying any behavior described in `docs/system-state.md`:
 This applies to: AI pipeline, validation layer, runtime pipeline, execution semantics, and schema surfaces with no callers.
 
 <!-- gitnexus:start -->
+
 # GitNexus — Code Intelligence
 
 This project is indexed by GitNexus as **udd-web** (1507 symbols, 2885 relationships, 73 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
@@ -158,22 +169,22 @@ This project is indexed by GitNexus as **udd-web** (1507 symbols, 2885 relations
 
 ## Resources
 
-| Resource | Use for |
-|----------|---------|
-| `gitnexus://repo/udd-web/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/udd-web/clusters` | All functional areas |
-| `gitnexus://repo/udd-web/processes` | All execution flows |
-| `gitnexus://repo/udd-web/process/{name}` | Step-by-step execution trace |
+| Resource                                 | Use for                                  |
+| ---------------------------------------- | ---------------------------------------- |
+| `gitnexus://repo/udd-web/context`        | Codebase overview, check index freshness |
+| `gitnexus://repo/udd-web/clusters`       | All functional areas                     |
+| `gitnexus://repo/udd-web/processes`      | All execution flows                      |
+| `gitnexus://repo/udd-web/process/{name}` | Step-by-step execution trace             |
 
 ## CLI
 
-| Task | Read this skill file |
-|------|---------------------|
-| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md` |
-| Blast radius / "What breaks if I change X?" | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
-| Trace bugs / "Why is X failing?" | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md` |
-| Rename / extract / split / refactor | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md` |
-| Tools, resources, schema reference | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md` |
-| Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
+| Task                                         | Read this skill file                                        |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| Understand architecture / "How does X work?" | `.claude/skills/gitnexus/gitnexus-exploring/SKILL.md`       |
+| Blast radius / "What breaks if I change X?"  | `.claude/skills/gitnexus/gitnexus-impact-analysis/SKILL.md` |
+| Trace bugs / "Why is X failing?"             | `.claude/skills/gitnexus/gitnexus-debugging/SKILL.md`       |
+| Rename / extract / split / refactor          | `.claude/skills/gitnexus/gitnexus-refactoring/SKILL.md`     |
+| Tools, resources, schema reference           | `.claude/skills/gitnexus/gitnexus-guide/SKILL.md`           |
+| Index, status, clean, wiki CLI commands      | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md`             |
 
 <!-- gitnexus:end -->
