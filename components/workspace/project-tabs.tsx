@@ -22,7 +22,7 @@ const TABS: Tab[] = [
   {
     href: (id) => `/projects/${id}/ai`,
     match: (p, id) => p.startsWith(`/projects/${id}/ai`) || p === `/projects/${id}`,
-    label: "AI",
+    label: "Cockpit",
     icon: Bot,
   },
   {

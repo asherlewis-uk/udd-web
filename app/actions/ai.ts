@@ -38,7 +38,7 @@ async function enforceConcurrencyLimit(
   if (error) throw new Error(error.message)
   if ((count ?? 0) >= MAX_LIVE_TASKS_PER_USER) {
     throw new Error(
-      `You already have ${count} work items in progress. Wait for them to finish (or cancel one) before starting another.`,
+      `You already have ${count} generation runs in progress. Wait for them to finish (or cancel one) before starting another.`,
     )
   }
 }

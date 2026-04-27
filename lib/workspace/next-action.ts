@@ -80,13 +80,15 @@ export function deriveNextAction(input: {
   //  when the user explicitly calls startRunAction or startRunFromTaskAction.")
   if (!latestTask) {
     return {
-      label: "Describe what to build",
-      description: "No work item yet. Describe the first change and UDD will draft saved files.",
-      cta: { label: "Submit a prompt", href: aiHref },
+      label: "Start a generation run",
+      description: "No generation runs yet. Describe the first scaffold or change and UDD will draft saved files.",
+      cta: { label: "Start run", href: aiHref },
       reason: "No ai_tasks row for this project. Work is entirely user-initiated.",
       state: "idle",
     }
   }
+
+  const operation = nextActionOperation(latestTask.kind)
 
   // ── 2. Task pending ───────────────────────────────────────────────────────
   // The ai_tasks row was inserted by createAITask and the after() callback
@@ -96,9 +98,9 @@ export function deriveNextAction(input: {
   //  "pending → running claim via conditional update eq('status','pending')")
   if (latestTask.status === "pending") {
     return {
-      label: "Work item queued",
-      description: "UDD has the request and will start drafting files shortly.",
-      cta: { label: "Inspect work item", href: aiHref },
+      label: `${operation.label} queued`,
+      description: `${operation.sentenceName} is queued and will start drafting files shortly.`,
+      cta: { label: "Inspect generation run", href: aiHref },
       reason:
         "Task status is pending — runAITask has been scheduled via after() but has not started yet " +
         "(system-state.md §AI Pipeline Task state transitions).",
@@ -115,9 +117,9 @@ export function deriveNextAction(input: {
   //  "running → failed on any error: generation, timeout, validation, or persistence")
   if (latestTask.status === "running") {
     return {
-      label: "UDD is drafting files",
-      description: "The current work item is being generated and checked before anything is saved.",
-      cta: { label: "Inspect work item", href: aiHref },
+      label: `${operation.label} in progress`,
+      description: operation.runningDescription,
+      cta: { label: "Inspect generation run", href: aiHref },
       reason:
         "Task status is running — the model is generating output. Outcome will be " +
         "completed or failed (system-state.md §AI Pipeline Task state transitions).",
@@ -137,13 +139,13 @@ export function deriveNextAction(input: {
   if (latestTask.status === "failed") {
     const blockingCount = validationSummary?.blocking_count ?? 0
     return {
-      label: "Review and revise",
+      label: "Review failed generation run",
       description:
         blockingCount > 0
-          ? `The validation check found ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"}. Revise the prompt and try again.`
-          : "The last work item failed. Review the error and try again.",
+          ? `The ${operation.name} failed validation with ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"}. Revise the prompt and try again.`
+          : `The last ${operation.name} failed. Review the error and try again.`,
       cta: {
-        label: blockingCount > 0 ? "Inspect issues" : "Inspect work item",
+        label: blockingCount > 0 ? "Inspect issues" : "Inspect generation run",
         href: aiHref,
       },
       reason:
@@ -164,9 +166,9 @@ export function deriveNextAction(input: {
   //  explicitly calls retryFailedTask.")
   if (latestTask.status === "cancelled") {
     return {
-      label: "Resume work",
-      description: "The last work item was cancelled. Submit a new prompt to continue.",
-      cta: { label: "Submit new prompt", href: aiHref },
+      label: "Resume generation",
+      description: "The last generation run was cancelled. Submit a new prompt to continue.",
+      cta: { label: "Start new run", href: aiHref },
       reason:
         "Task was cancelled by the user. No automatic retry — " +
         "(system-state.md §Execution Semantics Explicit absence of automation).",
@@ -197,8 +199,8 @@ export function deriveNextAction(input: {
     return {
       label: "Unexpected state",
       description:
-        "A saved work item has blocking validation issues recorded. This should not occur.",
-      cta: { label: "Inspect work item", href: aiHref },
+        "A saved generation run has blocking validation issues recorded. This should not occur.",
+      cta: { label: "Inspect generation run", href: aiHref },
       reason:
         "completed+blocking_count>0 is impossible per Intentional Constraint §1 " +
         "(system-state.md). Data inconsistency detected.",
@@ -218,8 +220,8 @@ export function deriveNextAction(input: {
     return {
       label: "Saved files missing",
       description:
-        "The last work item finished but no saved files were found. This may indicate a data issue.",
-      cta: { label: "Inspect work item", href: aiHref },
+        "The last generation run finished but no saved files were found. This may indicate a data issue.",
+      cta: { label: "Inspect generation run", href: aiHref },
       reason:
         "completed implies persistFiles succeeded (Intentional Constraint §1) but " +
         "projectFilesCount is 0. Data inconsistency.",
@@ -298,7 +300,7 @@ export function deriveNextAction(input: {
   if (warnings > 0 && !latestRunSession) {
     return {
       label: "Start validation check",
-      description: `The work item saved files with ${warnings} warning${warnings === 1 ? "" : "s"}. Start a validation check to review per-file results.`,
+      description: `The ${operation.name} saved files with ${warnings} warning${warnings === 1 ? "" : "s"}. Start a validation check to review per-file parser results.`,
       cta: { label: "Start validation check", href: runHref },
       reason:
         `Warnings present (warning_count=${warnings}) — they do not block completion ` +
@@ -316,7 +318,7 @@ export function deriveNextAction(input: {
   if (!latestRunSession) {
     return {
       label: "Start validation check",
-      description: `${projectFilesCount} saved file${projectFilesCount === 1 ? "" : "s"} are ready. Start a validation check to confirm per-file parse results.`,
+      description: `${projectFilesCount} saved file${projectFilesCount === 1 ? "" : "s"} from the ${operation.name} are ready. Start a validation check to confirm per-file parse results.`,
       cta: { label: "Start validation check", href: runHref },
       reason:
         "Task completed cleanly, no run session. Run sessions are user-initiated " +
@@ -331,11 +333,66 @@ export function deriveNextAction(input: {
   // keep iterating with the AI.
   return {
     label: "Continue building",
-    description: "Submit a new prompt to extend or refine the project.",
+    description: "Submit a new scaffold, edit, or refactor prompt to continue the project.",
     cta: { label: "Continue building", href: aiHref },
     reason:
       "Task completed cleanly, files persisted, run session exists in terminal state. " +
       "Ready for the next iteration.",
     state: "ready",
+  }
+}
+
+function nextActionOperation(kind: string): {
+  label: string
+  name: string
+  sentenceName: string
+  runningDescription: string
+} {
+  if (kind === "scaffold") {
+    return {
+      label: "Scaffold run",
+      name: "scaffold run",
+      sentenceName: "The scaffold run",
+      runningDescription:
+        "UDD is scaffolding a replacement file set. Files are checked before anything is saved.",
+    }
+  }
+
+  if (kind === "refactor") {
+    return {
+      label: "Refactor run",
+      name: "refactor run",
+      sentenceName: "The refactor run",
+      runningDescription:
+        "UDD is drafting a refactor against the saved file set and checking it before anything is saved.",
+    }
+  }
+
+  if (kind === "explain") {
+    return {
+      label: "Explain run",
+      name: "explanation run",
+      sentenceName: "The explanation run",
+      runningDescription:
+        "UDD is processing an explanation request. Any generated files still validate before save.",
+    }
+  }
+
+  if (kind === "other") {
+    return {
+      label: "Generation run",
+      name: "generation run",
+      sentenceName: "The generation run",
+      runningDescription:
+        "UDD is generating output and checking it before anything is saved.",
+    }
+  }
+
+  return {
+    label: "Edit run",
+    name: "edit run",
+    sentenceName: "The edit run",
+    runningDescription:
+      "UDD is drafting changes against the saved file set and checking them before anything is saved.",
   }
 }

@@ -8,8 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { ProviderCredentialControl } from "@/components/ai/provider-credential-control";
 import { ProviderSwitcher } from "@/components/ai/provider-switcher";
 import { createAITask } from "@/app/actions/ai";
+import { classifyPrompt } from "@/lib/ai/classify";
 import { cn } from "@/lib/utils";
 import { getProviderOptions, type ProviderId } from "@/lib/ai/providers";
+import type { AITaskKind } from "@/lib/ai/types";
 
 const PROVIDER_OPTIONS = getProviderOptions();
 
@@ -67,6 +69,11 @@ export function AIPromptForm({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cockpit = variant === "cockpit";
   const isDisabled = pending || !!busy;
+  const [draftPrompt, setDraftPrompt] = useState("");
+  const [optimisticSubmission, setOptimisticSubmission] = useState<{
+    prompt: string;
+    operation: PromptOperation;
+  } | null>(null);
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(
     activeProvider?.id ?? "openai",
   );
@@ -75,11 +82,19 @@ export function AIPromptForm({
       activeProvider?.credentialStatuses ?? { openai: false, anthropic: false },
     );
 
+  const draftOperation = draftPrompt.trim()
+    ? promptOperationForKind(classifyPrompt(draftPrompt).kind)
+    : null;
+
   useEffect(() => {
     if (!activeProvider) return;
     setSelectedProviderId(activeProvider.id);
     setCredentialStatuses(activeProvider.credentialStatuses);
   }, [activeProvider]);
+
+  useEffect(() => {
+    if (state.error) setOptimisticSubmission(null);
+  }, [state.error]);
 
   const selectedProvider =
     PROVIDER_OPTIONS.find((provider) => provider.id === selectedProviderId) ??
@@ -103,16 +118,31 @@ export function AIPromptForm({
     }));
   };
 
-  const handleAutoResize = (e: React.FormEvent<HTMLTextAreaElement>) => {
+  const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    setDraftPrompt(el.value);
+    if (cockpit) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    if (!cockpit) return;
+    const formData = new FormData(e.currentTarget);
+    const prompt = String(formData.get("prompt") ?? "").trim();
+    if (!prompt) return;
+    setOptimisticSubmission({
+      prompt,
+      operation: promptOperationForKind(classifyPrompt(prompt).kind),
+    });
   };
 
   return (
     <form
       ref={formRef}
       action={formAction}
+      onSubmit={handleSubmit}
       className={cn(
         "flex flex-col gap-3",
         cockpit ? "w-full" : "rounded-lg border border-border bg-card p-4",
@@ -122,13 +152,28 @@ export function AIPromptForm({
       {redirectTo ? (
         <input type="hidden" name="redirect_to" value={redirectTo} />
       ) : null}
+      {cockpit && optimisticSubmission && pending ? (
+        <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-foreground">
+              Queuing generation run
+            </span>
+            <span className="rounded-sm bg-background px-1.5 py-0.5 text-muted-foreground">
+              {optimisticSubmission.operation.badge}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-muted-foreground">
+            {optimisticSubmission.prompt}
+          </p>
+        </div>
+      ) : null}
       <Textarea
         ref={textareaRef}
         name="prompt"
         placeholder={
           cockpit
-            ? "Describe the next work item..."
-            : "Describe a change. e.g. Scaffold a landing page with a hero and a CTA."
+            ? "Describe a scaffold, edit, or refactor..."
+            : "Describe a generation run. e.g. Scaffold a landing page with a hero and a CTA."
         }
         rows={cockpit ? 4 : 3}
         required
@@ -136,10 +181,10 @@ export function AIPromptForm({
         className={cn(
           "resize-none shadow-none",
           cockpit
-            ? "min-h-[120px] max-h-64 rounded-lg border-border bg-background px-5 py-4 text-base leading-7 transition-[box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-foreground/20 md:text-base"
+            ? "min-h-30 max-h-64 rounded-lg border-border bg-background px-5 py-4 text-base leading-7 transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-foreground/20 md:text-base"
             : "border-0 bg-transparent p-0 text-sm focus-visible:ring-0",
         )}
-        onInput={cockpit ? handleAutoResize : undefined}
+        onInput={handleInput}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
             e.preventDefault();
@@ -147,6 +192,14 @@ export function AIPromptForm({
           }
         }}
       />
+      {cockpit && draftOperation ? (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="rounded-sm bg-muted px-1.5 py-0.5 font-medium text-foreground">
+            {draftOperation.badge}
+          </span>
+          <span>{draftOperation.description}</span>
+        </div>
+      ) : null}
       {cockpit && activeProvider ? (
         <div className="flex flex-col gap-1 text-[11px] text-muted-foreground">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -195,9 +248,9 @@ export function AIPromptForm({
             )
           ) : (
             <>
-              Work item lifecycle —{" "}
+                Generation lifecycle —{" "}
               <span className="font-mono text-[11px]">
-                queued → working → saved
+                  queued → generating → saved
               </span>
             </>
           )}
@@ -206,14 +259,14 @@ export function AIPromptForm({
           {state.error ? (
             <span className="text-xs text-destructive" role="alert">
               {state.error}
-              {cockpit && state.error.includes("work items in progress") ? (
+              {cockpit && state.error.includes("generation runs in progress") ? (
                 <>
                   {" "}
                   <Link
                     href={`/projects/${projectId}/ai`}
                     className="underline hover:opacity-80"
                   >
-                    Manage work items
+                    Manage generation runs
                   </Link>
                 </>
               ) : null}
@@ -230,11 +283,11 @@ export function AIPromptForm({
             {pending ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Queuing
+                Queuing run
               </>
             ) : (
               <>
-                Submit
+                Start run
                 <ArrowRight className="h-3.5 w-3.5" />
               </>
             )}
@@ -243,4 +296,46 @@ export function AIPromptForm({
       </div>
     </form>
   );
+}
+
+type PromptOperation = {
+  badge: string;
+  description: string;
+};
+
+function promptOperationForKind(kind: AITaskKind): PromptOperation {
+  if (kind === "scaffold") {
+    return {
+      badge: "Scaffold run",
+      description:
+        "Full generated file set; saved files are replaced after validation passes.",
+    };
+  }
+
+  if (kind === "refactor") {
+    return {
+      badge: "Refactor run",
+      description: "Generated changes are checked against existing saved files.",
+    };
+  }
+
+  if (kind === "explain") {
+    return {
+      badge: "Explain run",
+      description:
+        "Classified as explanation; any generated files still validate before save.",
+    };
+  }
+
+  if (kind === "other") {
+    return {
+      badge: "Generation run",
+      description: "Generated files are checked before anything is saved.",
+    };
+  }
+
+  return {
+    badge: "Edit run",
+    description: "Generated changes are checked against the saved file set.",
+  };
 }

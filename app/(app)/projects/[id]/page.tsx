@@ -19,6 +19,7 @@ import type { Project } from "@/lib/types";
 import type {
   AITaskEventPayload,
   AITaskEventRow,
+  AITaskKind,
   AITaskResult,
   AITaskRow,
 } from "@/lib/ai/types";
@@ -323,6 +324,79 @@ function ConversationStream({
   );
 }
 
+type GenerationOperation = {
+  badge: string;
+  sentenceName: string;
+  description: string;
+  runningMessage: string;
+  contextMessage: string;
+};
+
+function generationOperation(kind: AITaskKind): GenerationOperation {
+  if (kind === "scaffold") {
+    return {
+      badge: "Scaffold run",
+      sentenceName: "The scaffold run",
+      description:
+        "Scaffold · generated files replace the saved file set after validation and persistence pass.",
+      runningMessage:
+        "UDD is scaffolding a replacement file set. Files are saved only after validation and persistence pass.",
+      contextMessage:
+        "UDD is drafting a replacement file set. Saved files change only after validation and persistence pass.",
+    };
+  }
+
+  if (kind === "refactor") {
+    return {
+      badge: "Refactor run",
+      sentenceName: "The refactor run",
+      description:
+        "Refactor · generated files are checked against the existing saved file set and then persisted if validation passes.",
+      runningMessage:
+        "UDD is refactoring against the saved file set. Files are saved only after validation and persistence pass.",
+      contextMessage:
+        "UDD is drafting a refactor against saved files. Changes are saved only after validation passes.",
+    };
+  }
+
+  if (kind === "explain") {
+    return {
+      badge: "Explain run",
+      sentenceName: "The explanation run",
+      description:
+        "Explain · source classified this as an explanation request; any generated files still use the validation gate.",
+      runningMessage:
+        "UDD is processing an explanation request. Any generated files are saved only after validation and persistence pass.",
+      contextMessage:
+        "UDD is processing an explanation request through the same validation-before-save gate.",
+    };
+  }
+
+  if (kind === "other") {
+    return {
+      badge: "Generation run",
+      sentenceName: "The generation run",
+      description:
+        "Generation · general generated output is checked before anything is saved.",
+      runningMessage:
+        "UDD is generating output. Files are saved only after validation and persistence pass.",
+      contextMessage:
+        "UDD is generating files. They are saved only after validation passes.",
+    };
+  }
+
+  return {
+    badge: "Edit run",
+    sentenceName: "The edit run",
+    description:
+      "Edit · generated files are checked against existing saved files and then persisted if validation passes.",
+    runningMessage:
+      "UDD is drafting changes against the saved file set. Files are saved only after validation and persistence pass.",
+    contextMessage:
+      "UDD is drafting changes against saved files. Changes are saved only after validation passes.",
+  };
+}
+
 function TaskConversationSummary({
   task,
   events,
@@ -333,6 +407,7 @@ function TaskConversationSummary({
   projectId: string;
 }) {
   const output = task.output as AITaskResult | null;
+  const operation = generationOperation(task.kind);
   const validationSummary = extractValidationSummary(events);
   const latestProgress = latestEventByKind(events, "progress");
   const firstBlockingIssue = events.find(
@@ -347,6 +422,7 @@ function TaskConversationSummary({
     <div className="flex flex-col gap-2 text-sm leading-relaxed">
       <div className="flex flex-wrap items-center gap-2">
         <WorkItemStatusBadge status={task.status} />
+        <OperationKindBadge label={operation.badge} />
         <span className="text-xs text-muted-foreground">
           {task.finished_at
             ? `Updated ${formatRelative(task.finished_at)}`
@@ -356,7 +432,13 @@ function TaskConversationSummary({
         </span>
       </div>
 
-      <p className="text-foreground">{taskStatusMessage(task, output)}</p>
+      <p className="text-foreground">
+        {taskStatusMessage(task, output, operation)}
+      </p>
+
+      <ConversationFact label="Operation">
+        {operation.description}
+      </ConversationFact>
 
       {task.status === "running" && latestProgress?.payload.message ? (
         <ConversationFact label="Progress">
@@ -365,14 +447,14 @@ function TaskConversationSummary({
       ) : null}
 
       {output && task.status === "completed" ? (
-        <ConversationFact label="Generated output">
+        <ConversationFact label="Saved proof">
           Saved {completedFileCount} generated file
-          {completedFileCount === 1 ? "" : "s"}. {output.summary}
+          {completedFileCount === 1 ? "" : "s"} after validation passed. {output.summary}
         </ConversationFact>
       ) : null}
 
       {output && task.status === "failed" ? (
-        <ConversationFact label="Generated output">
+        <ConversationFact label="Diagnostic output">
           {output.files.length} generated file
           {output.files.length === 1 ? "" : "s"} recorded for diagnostics; the
           task did not complete, so this result is not presented as saved.
@@ -408,7 +490,7 @@ function TaskConversationSummary({
 
       {task.status === "failed" || task.status === "cancelled" ? (
         <ConversationFact label="Recovery">
-          Review the recorded work item before retrying or starting a new
+          Review this generation run before retrying or submitting a revised
           prompt.
         </ConversationFact>
       ) : null}
@@ -447,6 +529,9 @@ function RunConversationSummary({
         </span>
       </div>
       <p className="text-foreground">{runStatusMessage(session)}</p>
+      <ConversationFact label="Operation">
+        Validation check · parser validation of saved files only.
+      </ConversationFact>
       {highlight ? (
         <ConversationFact
           label="Parser output"
@@ -519,9 +604,9 @@ function ChatMessage({
 function WorkItemStatusBadge({ status }: { status: LatestTask["status"] }) {
   const labels: Record<LatestTask["status"], string> = {
     pending: "queued",
-    running: "working",
-    completed: "saved",
-    failed: "needs revision",
+    running: "generating",
+    completed: "validated and saved",
+    failed: "failed",
     cancelled: "cancelled",
   };
   const tone =
@@ -538,6 +623,14 @@ function WorkItemStatusBadge({ status }: { status: LatestTask["status"] }) {
   );
 }
 
+function OperationKindBadge({ label }: { label: string }) {
+  return (
+    <span className="rounded-sm bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+      {label}
+    </span>
+  );
+}
+
 function ValidationCheckStatusBadge({
   status,
 }: {
@@ -545,11 +638,11 @@ function ValidationCheckStatusBadge({
 }) {
   const labels: Record<LatestRunSession["status"], string> = {
     idle: "idle",
-    starting: "checking",
+    starting: "validating",
     running: "validated",
     stopping: "stopping",
     stopped: "stopped",
-    error: "failed",
+    error: "validation failed",
   };
   const tone =
     status === "running"
@@ -568,32 +661,33 @@ function ValidationCheckStatusBadge({
 function taskStatusMessage(
   task: LatestTask,
   output: AITaskResult | null,
+  operation: GenerationOperation,
 ): string {
   if (task.status === "pending") {
-    return "UDD has this request queued. No generated output is recorded yet.";
+    return `${operation.sentenceName} queued. No generated output is recorded yet.`;
   }
 
   if (task.status === "running") {
-    return "UDD is generating output. Files are saved only after validation and persistence pass.";
+    return operation.runningMessage;
   }
 
   if (task.status === "completed") {
     const fileCount = output?.files.length ?? 0;
     if (fileCount === 0) {
-      return "The work item completed after validation and persistence.";
+      return `${operation.sentenceName} completed after validation and persistence.`;
     }
-    return `The work item completed and ${fileCount} generated file${
+    return `${operation.sentenceName} completed: validation passed and ${fileCount} generated file${
       fileCount === 1 ? " is" : "s are"
-    } recorded as saved.`;
+    } saved.`;
   }
 
   if (task.status === "failed") {
     return output
-      ? "Generated output was staged, but the task failed before completion. Saved files are not represented by this result."
-      : "The work item failed before a generated result was recorded.";
+      ? `${operation.sentenceName} staged generated output, but failed before completion. Saved files are not represented by this result.`
+      : `${operation.sentenceName} failed before a generated result was recorded.`;
   }
 
-  return "The work item was cancelled before a completed result was recorded.";
+  return `${operation.sentenceName} was cancelled before a completed result was recorded.`;
 }
 
 function runStatusMessage(session: LatestRunSession): string {
@@ -602,7 +696,7 @@ function runStatusMessage(session: LatestRunSession): string {
   }
 
   if (session.status === "running") {
-    return "Saved files parsed cleanly. UDD only validates files here; no app is served or previewed.";
+    return "Saved files parsed cleanly. This is validation only; no app is served or previewed.";
   }
 
   if (session.status === "stopping") {
@@ -610,11 +704,11 @@ function runStatusMessage(session: LatestRunSession): string {
   }
 
   if (session.status === "stopped") {
-    return "The validation check was stopped.";
+    return "The parser validation check was stopped.";
   }
 
   if (session.status === "error") {
-    return "The validation check ended with an error recorded by the parser or file loader.";
+    return "The parser validation check ended with an error recorded by the parser or file loader.";
   }
 
   return "No validation check is active.";
@@ -674,7 +768,7 @@ function runEventHighlight(
   if (session.status === "running") {
     return (
       latestRunEventMatching(events, (event) =>
-        /Validation complete|Build succeeded/i.test(event.message),
+        /Validation complete|Parsed cleanly/i.test(event.message),
       ) ?? events[events.length - 1]
     );
   }
@@ -807,7 +901,7 @@ function ContextSurface({
   }
 
   if (latestTask?.status === "pending" || latestTask?.status === "running") {
-    return <WorkingStateView />;
+    return <WorkingStateView task={latestTask} />;
   }
 
   if (validationSummary) {
@@ -907,12 +1001,14 @@ function FileSummaryView({
   );
 }
 
-function WorkingStateView() {
+function WorkingStateView({ task }: { task: LatestTask }) {
+  const operation = generationOperation(task.kind);
+
   return (
     <div className="flex min-h-full flex-col justify-center px-6 py-6 text-sm">
-      <p className="text-muted-foreground">Working…</p>
+      <p className="text-muted-foreground">{operation.badge} in progress</p>
       <p className="mt-1 text-xs text-muted-foreground/70">
-        UDD is generating files. They are saved only after validation passes.
+        {operation.contextMessage}
       </p>
     </div>
   );
@@ -921,7 +1017,7 @@ function WorkingStateView() {
 function EmptyStateView() {
   return (
     <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-      No activity yet
+      No generation runs yet
     </div>
   );
 }
