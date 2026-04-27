@@ -315,6 +315,14 @@ Generation inspection routes only to detail surfaces: queued/running generation 
 
 Runtime recommendations are freshness-aware. If saved files exist without a task row, if no run session exists after a completed task, if the latest run predates the newest saved file or completed task, or if a stopped run lacks clean validation/preview evidence, the cockpit recommends starting a local preview check inline. A running session with `preview_url`, a live-preview event, or a clean-validation event allows the cockpit to recommend continuing generation, subject to provider readiness. (lib/workspace/next-action.ts:141–149, 347–425, 437–495; app/(app)/projects/[id]/page.tsx:204–232, 852–856)
 
+## Files Tab — Saved file inspection
+
+The Files tab is a read-only inspection surface for persisted `project_files`, not a diagnostic view of staged AI output. It authenticates the user, confirms the project belongs to that owner, and filters both the file list and selected file-content lookup by `project_id` and `owner_id`. (app/(app)/projects/[id]/files/page.tsx:39–72)
+
+The list query loads file metadata ordered by path. The active inspected file is selected from `?file=<path>` only when that path exists in the saved file list; otherwise the first saved file is selected. The selected file query then loads its persisted `content` from `project_files`. (app/(app)/projects/[id]/files/page.tsx:52–72)
+
+The empty-state copy says files appear only after generation or repair passes validation and persistence, and that failed task diagnostics stay on the AI tab. The non-empty state shows saved-file metadata and renders the selected file's persisted contents in a code block. (app/(app)/projects/[id]/files/page.tsx:77–168)
+
 ---
 
 ## Execution Semantics — Invocation and Ownership
