@@ -246,6 +246,20 @@ There are no WebSocket connections, no Supabase Realtime subscriptions, and no s
 
 ---
 
+## Cockpit Conversation Reconstruction
+
+The project cockpit reconstructs recent conversation context directly from existing persisted records. On each server render it loads up to six recent `ai_tasks`, up to two recent `run_sessions`, the current `project_files` summary, and then fetches the referenced `prompts`, `ai_task_events`, and `run_events` rows for those recent records. (app/(app)/projects/[id]/page.tsx:78–107, 120–156, 158–190)
+
+Conversation entries are built in memory from those rows and sorted by their persisted `created_at` timestamps. A user bubble is rendered only from a recorded prompt: `prompts.body` via `ai_tasks.prompt_id`, falling back to `ai_tasks.input.prompt` when no prompt row is available. Project metadata is not rendered as a user-authored message. (app/(app)/projects/[id]/page.tsx:271–285, 304–312, 622–633)
+
+Task assistant entries are derived from `ai_tasks.status`, timestamps, `ai_tasks.output`, `ai_tasks.error`, and grouped `ai_task_events`. Pending and running copy is status-backed; running progress uses the latest persisted `progress` event; completed generated output uses staged task output plus the completed event file count when present; failed staged output is labeled diagnostic and not presented as saved. Validation summaries and blocking issue callouts come from persisted `validation` events. (app/(app)/projects/[id]/page.tsx:337–346, 349–420, 567–595, 636–660, 694–699)
+
+Validation-check conversation entries are derived from recent `run_sessions` and grouped `run_events`. Their copy describes parser validation only and explicitly says no app is served or previewed while showing the latest relevant persisted parser output. (app/(app)/projects/[id]/page.tsx:425–467, 598–619, 663–681)
+
+The cockpit pollers remain refresh-based: polling is active when any recent task is `pending`/`running` or any recent run session is `starting`/`running`/`stopping`, then `TaskPoller` and `RunPoller` re-fetch the server component tree. (app/(app)/projects/[id]/page.tsx:195–205, 250–251; components/ai/task-poller.tsx:14–20; components/run/run-poller.tsx:14–20)
+
+---
+
 ## Execution Semantics — Invocation and Ownership
 
 ### User-triggered
