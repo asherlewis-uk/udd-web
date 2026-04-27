@@ -1,6 +1,7 @@
 import "server-only"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveProvider, getProvider, isProviderId, type ProviderConfig } from "@/lib/ai/providers"
+import { getSecret } from "@/lib/secrets"
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
@@ -38,4 +39,16 @@ export async function getActiveProviderForOwner(
   }
 
   return getActiveProvider()
+}
+
+/**
+ * Resolve a stored user credential for the given provider.
+ * Returns the decrypted API key, or null if none is stored.
+ * Server-side only — the returned value must never be sent to the client.
+ */
+export async function getCredentialForProvider(
+  ownerId: string,
+  providerId: string,
+): Promise<string | null> {
+  return getSecret(ownerId, "ai_provider_key", providerId)
 }

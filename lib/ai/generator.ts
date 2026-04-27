@@ -57,6 +57,14 @@ export type GenerateOptions = {
   abortSignal?: AbortSignal
   /** Override the provider (e.g. from per-user saved default). */
   provider?: ProviderConfig
+  /**
+   * User-owned API key resolved server-side by getCredentialForProvider.
+   * Present when the user has stored a BYOK credential for the selected provider.
+   * Forwarding this into the AI provider API call requires Phase 4 gateway
+   * BYOK wiring — it is resolved here but not yet passed to streamText.
+   * Must never be returned to the client.
+   */
+  credential?: string | null
 }
 
 /**

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { generateResult } from "@/lib/ai/generator"
-import { getActiveProviderForOwner } from "@/lib/ai/providers/server"
+import { getActiveProviderForOwner, getCredentialForProvider } from "@/lib/ai/providers/server"
 import type {
   AITaskEventKind,
   AITaskEventPayload,
@@ -105,6 +105,12 @@ export async function runAITask(taskId: string): Promise<void> {
     // the generation path so saveAIProviderConfig has an effect.
     const provider = await getActiveProviderForOwner(ownerId, supabase)
 
+    // Resolve stored user credential for the selected provider (BYOK Phase 3).
+    // Returns the decrypted key if the user has stored one, otherwise null.
+    // The credential is available in generateResult but is not yet forwarded
+    // to the AI provider API call — that wiring is Phase 4 (gateway BYOK).
+    const credential = await getCredentialForProvider(ownerId, provider.id)
+
     // Create an AbortController with a timeout so a hung stream doesn't
     // orphan the task in 'running' forever. The reaper catches anything
     // that slips past, but this provides a faster, cleaner failure path.
@@ -118,6 +124,7 @@ export async function runAITask(taskId: string): Promise<void> {
         { prompt, kind, projectName, idea, description },
         {
           provider,
+          credential,
           abortSignal: controller.signal,
           hooks: {
             onStart: async ({ provider }) => {

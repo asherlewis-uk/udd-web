@@ -180,9 +180,19 @@ Settings and the cockpit switcher both write through `saveAIProviderConfig`; the
 
 The cockpit page resolves the active provider server-side and passes it to `AIPromptForm`, which renders provider selection copy stating that selection only chooses the provider, credentials come from the server environment, UDD does not accept or store API keys, and tasks fail if the environment is not configured for the selected provider. (app/(app)/projects/[id]/page.tsx:99–105, 165, 296–305; components/ai/ai-prompt-form.tsx:108–122)
 
-### Credential handling — env-managed only
+### Credential handling — Phase 3 BYOK foundation
 
-BYOK is not implemented. No API key input exists in the provider surfaces. No user API keys are accepted or stored. Credentials remain server-environment-managed, and selecting a provider does not prove that provider is usable unless the server environment is configured for it. `saveAIProviderConfig` rejects secret-shaped metadata keys/values and every upsert writes `secret_ref: null`; `provider_configs.secret_ref` remains unused/null. (components/settings/provider-form.tsx:72–76, components/ai/ai-prompt-form.tsx:119–122, app/actions/provider-configs.ts:13–30, 61–82, scripts/004_document_forward_looking.sql:10–13)
+**Storage**: User API keys are stored encrypted in the `user_secrets` table. Encryption is AES-256-GCM using a key derived from `UDD_SECRET_KEY` (SHA-256). `encrypted_value` holds ciphertext only — no plaintext key is ever written to the database. `lib/secrets/crypto.ts` is `server-only` and may not be imported in client code. (lib/secrets/crypto.ts, lib/secrets/index.ts, scripts/005_user_secrets.sql)
+
+**Server actions**: `app/actions/secrets.ts` exposes three actions — `saveProviderCredential`, `deleteProviderCredential`, and `getProviderCredentialStatuses`. The status action returns `Record<ProviderId, boolean>` (presence flags only); no secret value is ever returned to any caller. (app/actions/secrets.ts)
+
+**Generation resolution**: `runAITask` calls `getCredentialForProvider(ownerId, provider.id)` immediately after provider selection. If a credential is stored for the active provider, it is decrypted server-side and passed to `generateResult` via `options.credential`. (lib/ai/providers/server.ts, lib/ai/service.ts)
+
+**Credential use in API calls**: The resolved credential is available inside `generateResult` but is not yet forwarded to the `streamText` call. All generation API calls continue to use environment credentials as the active path. Wiring the user credential into the AI provider call (via AI Gateway BYOK configuration) is pending Phase 4. (lib/ai/generator.ts)
+
+**No BYOK UI**: No API key input surface exists. Provider truth copy is unchanged. Selecting a provider does not prove that provider is usable unless the server environment is configured for it or a user credential is stored and wired (Phase 4). (components/settings/provider-form.tsx:72–76, components/ai/ai-prompt-form.tsx:119–122)
+
+**Legacy**: `provider_configs.secret_ref` remains null. User credentials are in `user_secrets`, not `provider_configs`. `saveAIProviderConfig` continues to reject secret-shaped metadata. (app/actions/provider-configs.ts:13–30, 61–82, scripts/004_document_forward_looking.sql:10–13)
 
 ---
 
@@ -195,6 +205,7 @@ Each surface below is labeled **schema only — no app code callers**.
 | `exports` table                      | scripts/001_init_schema.sql | schema only — no app code callers               | scripts/004_document_forward_looking.sql               |
 | `previews` table                     | scripts/001_init_schema.sql | schema only — no app code callers               | Verified by reading all files in lib/ and app/actions/ |
 | `provider_configs.secret_ref` column | scripts/001_init_schema.sql | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql               |
+| `user_secrets` table                 | scripts/005_user_secrets.sql | active — read/write by lib/secrets/index.ts     | lib/secrets/index.ts, app/actions/secrets.ts           |
 | `run_sessions.preview_url` column    | scripts/001_init_schema.sql | schema only — always null — no app code callers | lib/runtime/service.ts:212–216                         |
 
 From scripts/004_document_forward_looking.sql:
