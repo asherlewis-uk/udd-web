@@ -9,5 +9,5 @@ comment on table public.exports is
 
 comment on column public.provider_configs.secret_ref is
   'Forward-looking: opaque reference to an external secret manager (e.g. Vercel '
-  'encrypted env, a KMS key id). Always null today — credentials come from env. '
+  'encrypted env, a KMS key id). Always null today — user credentials live in user_secrets. '
   'Never store raw secrets in this column.';

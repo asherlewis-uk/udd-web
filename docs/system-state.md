@@ -168,31 +168,39 @@ Two AI providers are defined in the single `PROVIDERS` registry: `openai` (`open
 
 ### Resolution and generation path
 
-`getActiveProviderForOwner(ownerId, supabase)` first reads the user's active default `provider_configs` row for `kind='ai'`, then falls back to `getActiveProvider()`, which reads `UDD_AI_PROVIDER`, validates it with `isProviderId`, and defaults to `openai` when unset or invalid. (lib/ai/providers/server.ts:12–41, lib/ai/providers/index.ts:44–49)
+`getActiveProviderForOwner(ownerId, supabase)` first reads the user's active default `provider_configs` row for `kind='ai'`, then falls back to `getActiveProvider()`, which reads `UDD_AI_PROVIDER`, validates it with `isProviderId`, and defaults to `openai` when unset or invalid. (lib/ai/providers/server.ts:19–47, lib/ai/providers/index.ts:44–49)
 
-`runAITask` passes the resolved provider into `generateResult`, and `generateResult` forwards only `provider.model` to `streamText`. (lib/ai/service.ts:104–106, lib/ai/generator.ts:71–75)
+`runAITask` resolves the active provider and then calls `getCredentialForProvider(ownerId, provider.id)`. If a stored credential exists, it passes the decrypted value into `generateResult` as `options.credential`. (lib/ai/service.ts:131–138)
+
+`generateResult` converts a provided credential into AI Gateway request-scoped BYOK provider options: `providerOptions.gateway.only` is limited to the selected provider id, and `providerOptions.gateway.byok[provider.id]` contains `{ apiKey: credential }`. If no credential is stored, `providerOptions` is omitted and the existing environment-managed AI Gateway path remains the fallback. (lib/ai/generator.ts:18–31, 98–107)
+
+Generation failures are normalized before being written to `ai_tasks.error` / `ai_task_events.payload.error`: AI Gateway authentication failures tell the operator to configure `AI_GATEWAY_API_KEY` or Vercel OIDC, while stored-credential authentication failures tell the user to replace or delete the saved provider credential. Secret values are not included in these messages. (lib/ai/service.ts:22–41)
 
 ### User surfaces
 
-User-facing provider selection exists in Settings and the cockpit. Settings labels this surface as “Provider selection” / “Default provider” and says: “Choose which server-configured provider UDD should use.” (app/(app)/settings/page.tsx:58–61, components/settings/provider-form.tsx:55, 72–76)
+User-facing provider selection exists in Settings and the cockpit. Settings labels this surface as “Provider selection” / “Default provider” and says the default provider uses a saved key when present or environment credentials when available. (app/(app)/settings/page.tsx:70–79, components/settings/provider-form.tsx:66–89)
 
-Settings and the cockpit switcher both write through `saveAIProviderConfig`; the save action semantics are unchanged. (components/settings/provider-form.tsx:14–16, 38–43; components/ai/provider-switcher.tsx:13–16, 45; app/actions/provider-configs.ts:46–110)
+Settings and the cockpit switcher both write provider preference through `saveAIProviderConfig`; credentials are not stored in provider metadata, and secret-shaped metadata is rejected with copy pointing users to the credential manager. (components/settings/provider-form.tsx:45–60; components/ai/provider-switcher.tsx:35–51; app/actions/provider-configs.ts:13–44)
 
-The cockpit page resolves the active provider server-side and passes it to `AIPromptForm`, which renders provider selection copy stating that selection only chooses the provider, credentials come from the server environment, UDD does not accept or store API keys, and tasks fail if the environment is not configured for the selected provider. (app/(app)/projects/[id]/page.tsx:99–105, 165, 296–305; components/ai/ai-prompt-form.tsx:108–122)
+The cockpit page resolves the active provider, provider credential presence flags, and AI Gateway environment fallback state server-side, then passes them to `AIPromptForm`. (app/(app)/projects/[id]/page.tsx:92–102)
 
-### Credential handling — Phase 3 BYOK foundation
+The cockpit renders provider readiness beside the input. Readiness is `Ready` when the selected provider has a saved credential or environment fallback is detected; otherwise it is `Credential needed`, the submit button is disabled, and an inline password input can save the missing credential without leaving the cockpit. Saved keys are never shown back after save. (components/ai/ai-prompt-form.tsx:70–104, 150–183, 220–224; components/ai/provider-credential-control.tsx:51–64, 86–153)
+
+Settings remains the safe credential-management surface for normal replacement/deletion. It lists each provider, renders save/replace/delete controls through `ProviderCredentialControl`, and states that saved keys are validated before encryption and never shown after save. (app/(app)/settings/page.tsx:33–43, 75–79; components/settings/provider-form.tsx:99–124; components/ai/provider-credential-control.tsx:51–81, 121–153)
+
+### Credential handling — BYOK runtime surface
 
 **Storage**: User API keys are stored encrypted in the `user_secrets` table. Encryption is AES-256-GCM using a key derived from `UDD_SECRET_KEY` (SHA-256). `encrypted_value` holds ciphertext only — no plaintext key is ever written to the database. `lib/secrets/crypto.ts` is `server-only` and may not be imported in client code. (lib/secrets/crypto.ts, lib/secrets/index.ts, scripts/005_user_secrets.sql)
 
-**Server actions**: `app/actions/secrets.ts` exposes three actions — `saveProviderCredential`, `deleteProviderCredential`, and `getProviderCredentialStatuses`. The status action returns `Record<ProviderId, boolean>` (presence flags only); no secret value is ever returned to any caller. (app/actions/secrets.ts)
+**Server actions**: `app/actions/secrets.ts` exposes three actions — `saveProviderCredential`, `deleteProviderCredential`, and `getProviderCredentialStatuses`. `saveProviderCredential` validates the supplied key with the selected upstream provider before calling `saveSecret`; failed validation throws and does not persist the value. `deleteProviderCredential` removes the encrypted row. The status action returns `Record<ProviderId, boolean>` (presence flags only); no secret value is ever returned to any caller. (app/actions/secrets.ts:11–89, 92–121)
 
-**Generation resolution**: `runAITask` calls `getCredentialForProvider(ownerId, provider.id)` immediately after provider selection. If a credential is stored for the active provider, it is decrypted server-side and passed to `generateResult` via `options.credential`. (lib/ai/providers/server.ts, lib/ai/service.ts)
+**Generation resolution**: `runAITask` calls `getCredentialForProvider(ownerId, provider.id)` immediately after provider selection. If a credential is stored for the active provider, it is decrypted server-side and passed to `generateResult` via `options.credential`. (lib/ai/providers/server.ts:50–59, lib/ai/service.ts:131–138)
 
-**Credential use in API calls**: The resolved credential is available inside `generateResult` but is not yet forwarded to the `streamText` call. All generation API calls continue to use environment credentials as the active path. Wiring the user credential into the AI provider call (via AI Gateway BYOK configuration) is pending Phase 4. (lib/ai/generator.ts)
+**Credential use in API calls**: The resolved credential is forwarded to `streamText` as request-scoped AI Gateway BYOK provider options for the selected provider. No credential is logged, written to events, returned to the client, or included in task output. If no credential is stored, the existing environment-managed AI Gateway path is used. (lib/ai/generator.ts:18–31, 98–107; lib/ai/service.ts:149–178)
 
-**No BYOK UI**: No API key input surface exists. Provider truth copy is unchanged. Selecting a provider does not prove that provider is usable unless the server environment is configured for it or a user credential is stored and wired (Phase 4). (components/settings/provider-form.tsx:72–76, components/ai/ai-prompt-form.tsx:119–122)
+**Provider readiness**: Readiness flags are derived from encrypted-secret presence via `hasSecret` and from a conservative environment fallback check for `AI_GATEWAY_API_KEY` or Vercel. The client receives booleans only, not credential values. (lib/ai/providers/server.ts:62–74; app/(app)/projects/[id]/page.tsx:92–102; app/(app)/settings/page.tsx:33–43, 75–79)
 
-**Legacy**: `provider_configs.secret_ref` remains null. User credentials are in `user_secrets`, not `provider_configs`. `saveAIProviderConfig` continues to reject secret-shaped metadata. (app/actions/provider-configs.ts:13–30, 61–82, scripts/004_document_forward_looking.sql:10–13)
+**Legacy**: `provider_configs.secret_ref` remains null. User credentials are in `user_secrets`, not `provider_configs`. `saveAIProviderConfig` continues to reject secret-shaped metadata and directs users to the credential manager. (app/actions/provider-configs.ts:13–44, 61–82, scripts/004_document_forward_looking.sql:10–13)
 
 ---
 
@@ -211,7 +219,7 @@ Each surface below is labeled **schema only — no app code callers**.
 From scripts/004_document_forward_looking.sql:
 
 - `exports`: _"Schema + RLS are in place; no application code reads or writes this table yet. Kept so the export feature can land without a migration."_
-- `provider_configs.secret_ref`: _"Always null today — credentials come from env. Never store raw secrets in this column."_
+- `provider_configs.secret_ref`: _"Always null today — user credentials live in user_secrets. Never store raw secrets in this column."_
 
 ---
 

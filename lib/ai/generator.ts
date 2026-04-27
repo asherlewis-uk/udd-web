@@ -15,6 +15,22 @@ function maxOutputTokensFor(kind: AITaskKind): number {
   return kind === "scaffold" ? 8000 : 4000
 }
 
+function gatewayProviderOptionsFor(
+  provider: ProviderConfig,
+  credential: string | null | undefined,
+) {
+  if (!credential) return undefined
+
+  return {
+    gateway: {
+      only: [provider.id],
+      byok: {
+        [provider.id]: [{ apiKey: credential }],
+      },
+    },
+  }
+}
+
 /**
  * Schema the model must conform to. All fields are required (no optional()) so
  * this works with OpenAI strict mode enforced by AI SDK 6's Output.object().
@@ -60,8 +76,6 @@ export type GenerateOptions = {
   /**
    * User-owned API key resolved server-side by getCredentialForProvider.
    * Present when the user has stored a BYOK credential for the selected provider.
-   * Forwarding this into the AI provider API call requires Phase 4 gateway
-   * BYOK wiring — it is resolved here but not yet passed to streamText.
    * Must never be returned to the client.
    */
   credential?: string | null
@@ -81,12 +95,15 @@ export async function generateResult(
     await options.hooks.onStart({ provider })
   }
 
+  const providerOptions = gatewayProviderOptionsFor(provider, options?.credential)
+
   const result = streamText({
     model: provider.model,
     system: buildSystemPrompt(ctx),
     prompt: buildUserPrompt(ctx),
     maxOutputTokens: maxOutputTokensFor(ctx.kind),
     output: Output.object({ schema: ResultSchema }),
+    ...(providerOptions ? { providerOptions } : {}),
     abortSignal: options?.abortSignal,
   })
 

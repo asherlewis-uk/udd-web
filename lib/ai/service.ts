@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { generateResult } from "@/lib/ai/generator"
 import { getActiveProviderForOwner, getCredentialForProvider } from "@/lib/ai/providers/server"
+import type { ProviderConfig } from "@/lib/ai/providers"
 import type {
   AITaskEventKind,
   AITaskEventPayload,
@@ -17,6 +18,28 @@ import {
 
 /** Maximum time allowed for a single AI generation call (5 minutes). */
 const GENERATION_TIMEOUT_MS = 5 * 60 * 1000
+
+function formatAITaskError(
+  err: unknown,
+  provider: ProviderConfig | null,
+  usedStoredCredential: boolean,
+): string {
+  const message = err instanceof Error ? err.message : "Unknown error"
+
+  if (/AI_GATEWAY_API_KEY|Unauthenticated request to AI Gateway|AI Gateway authentication failed/i.test(message)) {
+    return "UDD could not authenticate with Vercel AI Gateway. Configure AI_GATEWAY_API_KEY or Vercel OIDC; stored provider keys still route through AI Gateway."
+  }
+
+  if (
+    provider &&
+    usedStoredCredential &&
+    /(invalid api key|api key|credential|authentication|unauthorized|forbidden|401|403)/i.test(message)
+  ) {
+    return `The saved ${provider.label} credential could not be used. Replace or delete it, then retry the task.`
+  }
+
+  return message
+}
 
 /**
  * The only entry point for executing an AI task.
@@ -35,6 +58,8 @@ const GENERATION_TIMEOUT_MS = 5 * 60 * 1000
  */
 export async function runAITask(taskId: string): Promise<void> {
   const supabase = await createClient()
+  let generationProvider: ProviderConfig | null = null
+  let usedStoredCredential = false
 
   // Load the task. RLS guarantees it belongs to the caller.
   const { data: task, error: loadError } = await supabase
@@ -105,11 +130,12 @@ export async function runAITask(taskId: string): Promise<void> {
     // the generation path so saveAIProviderConfig has an effect.
     const provider = await getActiveProviderForOwner(ownerId, supabase)
 
-    // Resolve stored user credential for the selected provider (BYOK Phase 3).
-    // Returns the decrypted key if the user has stored one, otherwise null.
-    // The credential is available in generateResult but is not yet forwarded
-    // to the AI provider API call — that wiring is Phase 4 (gateway BYOK).
+    generationProvider = provider
+
+    // Resolve stored user credential for the selected provider. When present,
+    // generateResult forwards it to AI Gateway as request-scoped BYOK data.
     const credential = await getCredentialForProvider(ownerId, provider.id)
+    usedStoredCredential = Boolean(credential)
 
     // Create an AbortController with a timeout so a hung stream doesn't
     // orphan the task in 'running' forever. The reaper catches anything
@@ -251,7 +277,7 @@ export async function runAITask(taskId: string): Promise<void> {
       .eq("id", projectId)
       .eq("owner_id", ownerId)
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error"
+    const message = formatAITaskError(err, generationProvider, usedStoredCredential)
     await supabase
       .from("ai_tasks")
       .update({

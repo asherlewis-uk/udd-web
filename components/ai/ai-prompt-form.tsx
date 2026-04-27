@@ -1,19 +1,26 @@
 "use client";
 
-import { useActionState, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ProviderCredentialControl } from "@/components/ai/provider-credential-control";
 import { ProviderSwitcher } from "@/components/ai/provider-switcher";
 import { createAITask } from "@/app/actions/ai";
 import { cn } from "@/lib/utils";
-import type { ProviderId } from "@/lib/ai/providers";
+import { getProviderOptions, type ProviderId } from "@/lib/ai/providers";
+
+const PROVIDER_OPTIONS = getProviderOptions();
+
+export type ProviderCredentialStatuses = Record<ProviderId, boolean>;
 
 export type ActiveProviderInfo = {
   id: ProviderId;
   label: string;
   model: string;
+  credentialStatuses: ProviderCredentialStatuses;
+  environmentCredentialAvailable: boolean;
 };
 
 type State = { error: string | null };
@@ -60,6 +67,41 @@ export function AIPromptForm({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const cockpit = variant === "cockpit";
   const isDisabled = pending || !!busy;
+  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(
+    activeProvider?.id ?? "openai",
+  );
+  const [credentialStatuses, setCredentialStatuses] =
+    useState<ProviderCredentialStatuses>(
+      activeProvider?.credentialStatuses ?? { openai: false, anthropic: false },
+    );
+
+  useEffect(() => {
+    if (!activeProvider) return;
+    setSelectedProviderId(activeProvider.id);
+    setCredentialStatuses(activeProvider.credentialStatuses);
+  }, [activeProvider]);
+
+  const selectedProvider =
+    PROVIDER_OPTIONS.find((provider) => provider.id === selectedProviderId) ??
+    PROVIDER_OPTIONS[0];
+  const hasSavedCredential = credentialStatuses[selectedProviderId] ?? false;
+  const providerReady =
+    hasSavedCredential || !!activeProvider?.environmentCredentialAvailable;
+  const providerReadinessCopy = hasSavedCredential
+    ? "Stored credential will be used for new tasks."
+    : activeProvider?.environmentCredentialAvailable
+      ? "No saved key; UDD will use environment credentials unless you add one."
+      : "Add a credential before submitting work to this provider.";
+
+  const handleCredentialStatusChange = (
+    providerId: ProviderId,
+    hasCredential: boolean,
+  ) => {
+    setCredentialStatuses((current) => ({
+      ...current,
+      [providerId]: hasCredential,
+    }));
+  };
 
   const handleAutoResize = (e: React.FormEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
@@ -114,13 +156,31 @@ export function AIPromptForm({
             <ProviderSwitcher
               currentProviderId={activeProvider.id}
               disabled={pending}
+              onProviderChange={setSelectedProviderId}
             />
+            <span
+              className={cn(
+                "font-medium",
+                providerReady ? "text-emerald-600 dark:text-emerald-400" : "text-destructive",
+              )}
+            >
+              {providerReady ? "Ready" : "Credential needed"}
+            </span>
           </div>
           <span className="text-muted-foreground/70">
-            Selects the provider only. Credentials come from the server
-            environment — UDD does not accept or store API keys. Tasks fail if
-            the environment isn&apos;t configured for the selected provider.
+            {providerReadinessCopy}
           </span>
+          {!hasSavedCredential ? (
+            <ProviderCredentialControl
+              providerId={selectedProviderId}
+              providerLabel={selectedProvider.label}
+              hasCredential={hasSavedCredential}
+              disabled={pending || !!busy}
+              compact
+              allowDelete={false}
+              onStatusChange={handleCredentialStatusChange}
+            />
+          ) : null}
         </div>
       ) : null}
       <div className="flex items-center justify-between gap-3">
@@ -160,7 +220,7 @@ export function AIPromptForm({
           <Button
             type="submit"
             size="sm"
-            disabled={isDisabled}
+            disabled={isDisabled || (cockpit && activeProvider ? !providerReady : false)}
             className="gap-1.5"
           >
             {pending ? (

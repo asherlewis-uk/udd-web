@@ -1,14 +1,20 @@
 import "server-only"
 import { createClient } from "@/lib/supabase/server"
-import { getActiveProvider, getProvider, isProviderId, type ProviderConfig } from "@/lib/ai/providers"
-import { getSecret } from "@/lib/secrets"
+import {
+  getActiveProvider,
+  getProvider,
+  isProviderId,
+  PROVIDERS,
+  type ProviderConfig,
+  type ProviderId,
+} from "@/lib/ai/providers"
+import { getSecret, hasSecret } from "@/lib/secrets"
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>
 
 /**
  * Resolve the provider for a specific owner from provider_configs, with
  * fallback to the existing env-based selection.
- * Credentials are still environment-driven; this only resolves provider id.
  */
 export async function getActiveProviderForOwner(
   ownerId: string,
@@ -51,4 +57,18 @@ export async function getCredentialForProvider(
   providerId: string,
 ): Promise<string | null> {
   return getSecret(ownerId, "ai_provider_key", providerId)
+}
+
+export async function getProviderCredentialStatusesForOwner(
+  ownerId: string,
+): Promise<Record<ProviderId, boolean>> {
+  const result = {} as Record<ProviderId, boolean>
+  for (const providerId of Object.keys(PROVIDERS) as ProviderId[]) {
+    result[providerId] = await hasSecret(ownerId, "ai_provider_key", providerId)
+  }
+  return result
+}
+
+export function hasGatewayEnvironmentCredential(): boolean {
+  return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL === "1")
 }

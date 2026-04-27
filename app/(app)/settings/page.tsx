@@ -4,6 +4,10 @@ import { ProviderForm } from "@/components/settings/provider-form";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { isProviderId, type ProviderId } from "@/lib/ai/providers";
+import {
+  getProviderCredentialStatusesForOwner,
+  hasGatewayEnvironmentCredential,
+} from "@/lib/ai/providers/server";
 import { LogOut } from "lucide-react";
 
 export const metadata = {
@@ -26,14 +30,17 @@ export default async function SettingsPage() {
   // Load the user's saved default AI provider (if any). The Select widget
   // falls back to "openai" when nothing is saved so the UI always has a
   // defined value; the action only writes when the user clicks Save.
-  const { data: defaultProvider } = await supabase
-    .from("provider_configs")
-    .select("name")
-    .eq("owner_id", user.id)
-    .eq("kind", "ai")
-    .eq("is_default", true)
-    .limit(1)
-    .maybeSingle();
+  const [{ data: defaultProvider }, credentialStatuses] = await Promise.all([
+    supabase
+      .from("provider_configs")
+      .select("name")
+      .eq("owner_id", user.id)
+      .eq("kind", "ai")
+      .eq("is_default", true)
+      .limit(1)
+      .maybeSingle(),
+    getProviderCredentialStatusesForOwner(user.id),
+  ]);
 
   const currentProviderId: ProviderId | null = isProviderId(
     defaultProvider?.name,
@@ -65,7 +72,11 @@ export default async function SettingsPage() {
           Provider selection
         </h2>
         <div className="rounded-lg border border-border bg-card p-6">
-          <ProviderForm currentProviderId={currentProviderId} />
+          <ProviderForm
+            currentProviderId={currentProviderId}
+            credentialStatuses={credentialStatuses}
+            environmentCredentialAvailable={hasGatewayEnvironmentCredential()}
+          />
         </div>
       </section>
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
   Select,
@@ -18,15 +18,17 @@ const PROVIDER_OPTIONS = getProviderOptions()
 /**
  * Inline provider switcher for the cockpit. Reuses the same server action
  * used by the Settings form, so there is exactly one write path for the
- * user's default AI provider. Credentials are not handled here — they
- * remain server-environment-managed.
+ * user's default AI provider. Credential readiness is rendered by the
+ * surrounding provider controls so selection and secrets stay separate.
  */
 export function ProviderSwitcher({
   currentProviderId,
   disabled,
+  onProviderChange,
 }: {
   currentProviderId: ProviderId
   disabled?: boolean
+  onProviderChange?: (providerId: ProviderId) => void
 }) {
   const router = useRouter()
   // Optimistic value so the trigger updates immediately while the action runs.
@@ -34,11 +36,16 @@ export function ProviderSwitcher({
   const [isPending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    setValue(currentProviderId)
+  }, [currentProviderId])
+
   const handleChange = (next: string) => {
     if (next === value) return
     const previous = value
     const nextId = next as ProviderId
     setValue(nextId)
+    onProviderChange?.(nextId)
     setError(null)
     startTransition(async () => {
       try {
@@ -48,6 +55,7 @@ export function ProviderSwitcher({
       } catch (err) {
         // Roll back optimistic state on failure.
         setValue(previous)
+        onProviderChange?.(previous)
         setError(err instanceof Error ? err.message : "Failed to save.")
       }
     })

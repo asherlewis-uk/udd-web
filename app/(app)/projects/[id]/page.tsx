@@ -10,7 +10,11 @@ import { createClient } from "@/lib/supabase/server";
 import { formatRelative } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import { deriveNextAction } from "@/lib/workspace/next-action";
-import { getActiveProviderForOwner } from "@/lib/ai/providers/server";
+import {
+  getActiveProviderForOwner,
+  getProviderCredentialStatusesForOwner,
+  hasGatewayEnvironmentCredential,
+} from "@/lib/ai/providers/server";
 import type { Project } from "@/lib/types";
 import type { AITaskEventPayload } from "@/lib/ai/types";
 import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form";
@@ -85,11 +89,16 @@ export default async function WorkspacePage({
 
   if (!projectData) notFound();
 
-  const providerConfig = await getActiveProviderForOwner(user.id, supabase);
+  const [providerConfig, credentialStatuses] = await Promise.all([
+    getActiveProviderForOwner(user.id, supabase),
+    getProviderCredentialStatusesForOwner(user.id),
+  ]);
   const activeProvider: ActiveProviderInfo = {
     id: providerConfig.id,
     label: providerConfig.label,
     model: providerConfig.model,
+    credentialStatuses,
+    environmentCredentialAvailable: hasGatewayEnvironmentCredential(),
   };
 
   const project = projectData as Project;

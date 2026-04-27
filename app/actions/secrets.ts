@@ -2,10 +2,69 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
-import { isProviderId, type ProviderId } from "@/lib/ai/providers"
+import { getProvider, isProviderId, PROVIDERS, type ProviderId } from "@/lib/ai/providers"
 import { saveSecret, deleteSecret, hasSecret } from "@/lib/secrets"
 
 const PROVIDER_KEY_KIND = "ai_provider_key"
+const VALIDATION_TIMEOUT_MS = 10_000
+
+async function validateProviderCredential(
+  providerId: ProviderId,
+  apiKey: string,
+): Promise<void> {
+  const provider = getProvider(providerId)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), VALIDATION_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(getValidationUrl(providerId), {
+      method: "GET",
+      headers: getValidationHeaders(providerId, apiKey),
+      cache: "no-store",
+      signal: controller.signal,
+    })
+
+    if (response.ok) return
+
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(`${provider.label} rejected this API key. Check the key and try again.`)
+    }
+
+    throw new Error(
+      `${provider.label} credential validation failed with HTTP ${response.status}. Try again later.`,
+    )
+  } catch (err) {
+    if (err instanceof Error) {
+      if (err.name === "AbortError") {
+        throw new Error(`${provider.label} credential validation timed out. Try again.`)
+      }
+      if (err.message.includes(provider.label)) throw err
+    }
+    throw new Error(`${provider.label} credential validation could not reach the provider. Try again.`)
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
+function getValidationUrl(providerId: ProviderId): string {
+  return providerId === "openai"
+    ? "https://api.openai.com/v1/models"
+    : "https://api.anthropic.com/v1/models"
+}
+
+function getValidationHeaders(
+  providerId: ProviderId,
+  apiKey: string,
+): Record<string, string> {
+  if (providerId === "openai") {
+    return { Authorization: `Bearer ${apiKey}` }
+  }
+
+  return {
+    "anthropic-version": "2023-06-01",
+    "x-api-key": apiKey,
+  }
+}
 
 export async function saveProviderCredential(
   providerId: string,
@@ -24,7 +83,9 @@ export async function saveProviderCredential(
     throw new Error("API key is too short or empty")
   }
 
-  await saveSecret(user.id, PROVIDER_KEY_KIND, normalized, apiKey.trim())
+  const trimmed = apiKey.trim()
+  await validateProviderCredential(normalized, trimmed)
+  await saveSecret(user.id, PROVIDER_KEY_KIND, normalized, trimmed)
   revalidatePath("/settings")
 }
 
@@ -53,8 +114,8 @@ export async function getProviderCredentialStatuses(): Promise<Record<ProviderId
   } = await supabase.auth.getUser()
   if (!user) throw new Error("Not authenticated")
 
-  const result: Record<ProviderId, boolean> = { openai: false, anthropic: false }
-  for (const pid of Object.keys(result) as ProviderId[]) {
+  const result = {} as Record<ProviderId, boolean>
+  for (const pid of Object.keys(PROVIDERS) as ProviderId[]) {
     result[pid] = await hasSecret(user.id, PROVIDER_KEY_KIND, pid)
   }
   return result

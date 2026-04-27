@@ -19,7 +19,7 @@ function sanitizeMetadata(value: Record<string, unknown> | null | undefined): Re
   const sanitized: Record<string, unknown> = {}
   for (const [key, raw] of Object.entries(value)) {
     if (SECRETISH_KEY_PATTERN.test(key)) {
-      throw new Error("Saving provider API keys is not supported yet. Use environment credentials.")
+      throw new Error("Save provider API keys through the credential manager, not provider metadata.")
     }
     if (raw === null || typeof raw === "boolean" || typeof raw === "number") {
       sanitized[key] = raw
@@ -27,7 +27,7 @@ function sanitizeMetadata(value: Record<string, unknown> | null | undefined): Re
     }
     if (typeof raw === "string") {
       if (SECRETISH_VALUE_PATTERN.test(raw)) {
-        throw new Error("Saving provider API keys is not supported yet. Use environment credentials.")
+        throw new Error("Save provider API keys through the credential manager, not provider metadata.")
       }
       sanitized[key] = raw
       continue
@@ -41,7 +41,7 @@ function sanitizeMetadata(value: Record<string, unknown> | null | undefined): Re
 /**
  * Stores per-user AI provider configuration.
  * Stores provider selection + non-secret metadata only.
- * Credentials are not user-configurable here and continue to come from env.
+ * Credentials are stored only through app/actions/secrets.ts.
  */
 export async function saveAIProviderConfig(input: SaveAIProviderConfigInput): Promise<void> {
   const supabase = await createClient()
