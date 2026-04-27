@@ -145,7 +145,9 @@ export function AIPromptForm({
       onSubmit={handleSubmit}
       className={cn(
         "flex flex-col gap-3",
-        cockpit ? "w-full" : "rounded-lg border border-border bg-card p-4",
+        cockpit
+          ? "w-full rounded-lg border border-border/80 bg-card/85 p-2 shadow-[0_24px_80px_-48px_rgba(0,0,0,0.95)] backdrop-blur"
+          : "rounded-lg border border-border bg-card p-4",
       )}
     >
       <input type="hidden" name="project_id" value={projectId} />
@@ -153,12 +155,12 @@ export function AIPromptForm({
         <input type="hidden" name="redirect_to" value={redirectTo} />
       ) : null}
       {cockpit && optimisticSubmission && pending ? (
-        <div className="rounded-md border border-border/70 bg-muted/40 px-3 py-2 text-xs">
+        <div className="rounded-md border border-accent/25 bg-accent/10 px-3 py-2 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-foreground">
               Queuing generation run
             </span>
-            <span className="rounded-sm bg-background px-1.5 py-0.5 text-muted-foreground">
+            <span className="rounded-sm border border-border/60 bg-background/70 px-1.5 py-0.5 text-muted-foreground">
               {optimisticSubmission.operation.badge}
             </span>
           </div>
@@ -181,7 +183,7 @@ export function AIPromptForm({
         className={cn(
           "resize-none shadow-none",
           cockpit
-            ? "min-h-30 max-h-64 rounded-lg border-border bg-background px-5 py-4 text-base leading-7 transition-shadow duration-150 focus-visible:ring-2 focus-visible:ring-foreground/20 md:text-base"
+            ? "min-h-32 max-h-72 rounded-md border-0 bg-transparent px-3 py-3 text-[15px] leading-7 transition-shadow duration-150 placeholder:text-muted-foreground/55 focus-visible:ring-0 md:text-base"
             : "border-0 bg-transparent p-0 text-sm focus-visible:ring-0",
         )}
         onInput={handleInput}
@@ -193,32 +195,39 @@ export function AIPromptForm({
         }}
       />
       {cockpit && draftOperation ? (
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-          <span className="rounded-sm bg-muted px-1.5 py-0.5 font-medium text-foreground">
+        <div className="flex flex-wrap items-center gap-2 px-2 text-[11px] text-muted-foreground">
+          <span className="rounded-sm border border-border/60 bg-background/60 px-1.5 py-0.5 font-medium text-foreground">
             {draftOperation.badge}
           </span>
           <span>{draftOperation.description}</span>
         </div>
       ) : null}
       {cockpit && activeProvider ? (
-        <div className="flex flex-col gap-1 text-[11px] text-muted-foreground">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-            <span className="text-muted-foreground/80">
-              Provider for new tasks
-            </span>
-            <ProviderSwitcher
-              currentProviderId={activeProvider.id}
-              disabled={pending}
-              onProviderChange={setSelectedProviderId}
-            />
+        <div className="flex flex-col gap-2 border-t border-border/60 px-2 pt-3 text-[11px] text-muted-foreground">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <span className="text-muted-foreground/80">Provider</span>
+              <ProviderSwitcher
+                currentProviderId={activeProvider.id}
+                disabled={pending}
+                onProviderChange={setSelectedProviderId}
+              />
+            </div>
             <span
               className={cn(
-                "font-medium",
+                "inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 font-medium",
                 providerReady
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-destructive",
+                  ? "border-accent/35 bg-accent/10 text-accent"
+                  : "border-destructive/35 bg-destructive/10 text-destructive",
               )}
             >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  providerReady ? "bg-accent" : "bg-destructive",
+                )}
+                aria-hidden
+              />
               {providerReady ? "Ready" : "Credential needed"}
             </span>
           </div>
@@ -238,11 +247,16 @@ export function AIPromptForm({
           ) : null}
         </div>
       ) : null}
-      <div className="flex items-center justify-between gap-3">
+      <div
+        className={cn(
+          "flex items-center justify-between gap-3",
+          cockpit && "border-t border-border/60 px-2 pt-3",
+        )}
+      >
         <p className="text-xs text-muted-foreground">
           {cockpit ? (
             busy ? (
-              "UDD is working…"
+              "Generation run in progress."
             ) : (
               "UDD saves files only after validation passes."
             )
@@ -279,7 +293,7 @@ export function AIPromptForm({
             disabled={
               isDisabled || (cockpit && activeProvider ? !providerReady : false)
             }
-            className="gap-1.5"
+            className="h-9 gap-1.5 rounded-md px-4"
           >
             {pending ? (
               <>

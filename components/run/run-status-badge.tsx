@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils"
-import type { RunStatus } from "@/lib/types"
+import { cn } from "@/lib/utils";
+import type { RunStatus } from "@/lib/types";
 
 const TONE: Record<RunStatus, string> = {
   idle: "border-border bg-card text-muted-foreground",
@@ -8,7 +8,7 @@ const TONE: Record<RunStatus, string> = {
   stopping: "border-border bg-card text-foreground",
   stopped: "border-border bg-secondary text-muted-foreground",
   error: "border-destructive/40 bg-destructive/10 text-destructive",
-}
+};
 
 const LABEL: Record<RunStatus, string> = {
   idle: "Idle",
@@ -17,20 +17,21 @@ const LABEL: Record<RunStatus, string> = {
   stopping: "Stopping",
   stopped: "Stopped",
   error: "Error",
-}
+};
 
 export function RunStatusBadge({
   status,
   className,
 }: {
-  status: RunStatus
-  className?: string
+  status: RunStatus;
+  className?: string;
 }) {
-  const pulsing = status === "starting" || status === "running" || status === "stopping"
+  const pulsing =
+    status === "starting" || status === "running" || status === "stopping";
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider",
+        "inline-flex items-center gap-1.5 rounded-sm border px-2 py-0.5 font-mono text-[10px] uppercase",
         TONE[status],
         className,
       )}
@@ -50,5 +51,5 @@ export function RunStatusBadge({
       />
       {LABEL[status]}
     </span>
-  )
+  );
 }

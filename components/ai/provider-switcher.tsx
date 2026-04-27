@@ -62,7 +62,7 @@ export function ProviderSwitcher({
   };
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <Select
         value={value}
         onValueChange={handleChange}
@@ -70,7 +70,7 @@ export function ProviderSwitcher({
       >
         <SelectTrigger
           size="sm"
-          className="h-7 w-auto gap-1.5 border-border/60 bg-transparent px-2 text-xs"
+          className="h-7 max-w-52 gap-1.5 rounded-sm border-border/70 bg-background/60 px-2 text-xs shadow-none"
           aria-label="Active AI provider"
         >
           <SelectValue />

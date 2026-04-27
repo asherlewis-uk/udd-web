@@ -49,17 +49,17 @@ export default async function SettingsPage() {
     : null;
 
   return (
-    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-8 px-5 py-8">
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-5 py-8">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="mt-1.5 text-sm text-muted-foreground">
-          Your account and how UDD refers to you.
+          Account details, provider selection, and credential management.
         </p>
       </div>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold tracking-tight">Profile</h2>
-        <div className="rounded-lg border border-border bg-card p-6">
+        <h2 className="text-sm font-semibold">Profile</h2>
+        <div className="rounded-lg border border-border/70 bg-card/80 p-6 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
           <AccountForm
             email={user.email ?? ""}
             initialDisplayName={profile?.display_name ?? ""}
@@ -68,10 +68,8 @@ export default async function SettingsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold tracking-tight">
-          Provider selection
-        </h2>
-        <div className="rounded-lg border border-border bg-card p-6">
+        <h2 className="text-sm font-semibold">Provider selection</h2>
+        <div className="rounded-lg border border-border/70 bg-card/80 p-6 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
           <ProviderForm
             currentProviderId={currentProviderId}
             credentialStatuses={credentialStatuses}
@@ -81,8 +79,8 @@ export default async function SettingsPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold tracking-tight">Session</h2>
-        <div className="flex items-center justify-between rounded-lg border border-border bg-card p-5">
+        <h2 className="text-sm font-semibold">Session</h2>
+        <div className="flex items-center justify-between rounded-lg border border-border/70 bg-card/80 p-5 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
           <div>
             <div className="text-sm font-medium">Sign out of this device</div>
             <div className="text-xs text-muted-foreground">

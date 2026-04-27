@@ -48,22 +48,30 @@ export function RunControls({
         size="sm"
         onClick={handleStop}
         disabled={pending}
+        className="h-8 gap-1.5 rounded-md border-border/70 bg-background/60"
       >
         {pending ? (
           <Spinner className="h-3.5 w-3.5" />
         ) : (
           <Square className="h-3.5 w-3.5" />
         )}
-        Stop Preview
+        Stop local preview
       </Button>
     );
   }
 
   if (isBusy) {
     return (
-      <Button type="button" size="sm" disabled>
+      <Button
+        type="button"
+        size="sm"
+        disabled
+        className="h-8 gap-1.5 rounded-md"
+      >
         <Spinner className="h-3.5 w-3.5" />
-        {status === "starting" ? "Starting Preview" : "Stopping Preview"}
+        {status === "starting"
+          ? "Starting local preview"
+          : "Stopping local preview"}
       </Button>
     );
   }
@@ -76,6 +84,7 @@ export function RunControls({
       size="sm"
       onClick={handleStart}
       disabled={pending || !canStart}
+      className="h-8 gap-1.5 rounded-md"
     >
       {pending ? (
         <Spinner className="h-3.5 w-3.5" />
@@ -84,7 +93,7 @@ export function RunControls({
       ) : (
         <Play className="h-3.5 w-3.5" />
       )}
-      {isRestart ? "Restart Preview" : "Start Preview"}
+      {isRestart ? "Restart local preview" : "Start local preview"}
     </Button>
   );
 }

@@ -1,7 +1,18 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, FileText, RefreshCw, Wrench } from "lucide-react";
+import {
+  ArrowRight,
+  CheckCircle2,
+  CircleAlert,
+  Clock3,
+  Code2,
+  FileText,
+  Play,
+  RefreshCw,
+  ShieldCheck,
+  Wrench,
+} from "lucide-react";
 import { AIPromptForm } from "@/components/ai/ai-prompt-form";
 import { TaskPoller } from "@/components/ai/task-poller";
 import { RunPoller } from "@/components/run/run-poller";
@@ -238,9 +249,9 @@ export default async function WorkspacePage({
   });
 
   return (
-    <div className="flex flex-1 h-full overflow-hidden">
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto scroll-smooth px-6 py-6 space-y-2">
+    <div className="flex h-full flex-1 overflow-hidden bg-background/75">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex-1 space-y-3 overflow-y-auto scroll-smooth px-6 py-6">
           <ConversationStream
             tasks={recentTasks}
             promptsById={promptsById}
@@ -251,23 +262,26 @@ export default async function WorkspacePage({
           />
         </div>
 
-        <div className="flex-none flex flex-col gap-2 px-6 pb-6 pt-5">
-          <AssistantMessageBubble action={nextAction} projectId={id} />
-          <CockpitPromptForm
-            projectId={id}
-            busy={taskInFlight}
-            activeProvider={activeProvider}
-          />
+        <div className="flex-none border-t border-border/60 bg-background/90 px-6 pb-6 pt-4 backdrop-blur">
+          <div className="mx-auto flex w-full max-w-4xl flex-col gap-2">
+            <AssistantMessageBubble action={nextAction} projectId={id} />
+            <CockpitPromptForm
+              projectId={id}
+              busy={taskInFlight}
+              activeProvider={activeProvider}
+            />
+          </div>
         </div>
       </div>
 
-      <div className="hidden lg:flex w-[38%] shrink-0 border-l flex-col overflow-y-auto">
+      <div className="hidden w-[39%] min-w-100 max-w-136 shrink-0 flex-col overflow-hidden border-l border-border/70 bg-card/35 backdrop-blur lg:flex">
         <ContextSurface
           project={project}
           files={savedFiles}
           filesCount={count}
           validationSummary={validationSummary}
           latestRunSession={latestRunSession}
+          latestRunSummary={latestRunSummary}
           latestTask={latestTask}
         />
       </div>
@@ -958,10 +972,15 @@ function AssistantMessageBubble({
   const isProviderCredential = action.cta.action === "provider_credential";
 
   return (
-    <div className="flex items-baseline gap-2 py-1 text-sm text-muted-foreground/80">
-      <span className="leading-relaxed" title={action.reason}>
-        {action.description}
-      </span>
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/60 bg-card/45 px-3 py-2 text-sm text-muted-foreground/85">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0 rounded-sm border border-border/60 bg-background/55 px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
+          Next
+        </span>
+        <span className="min-w-0 leading-relaxed" title={action.reason}>
+          {action.description}
+        </span>
+      </div>
       {isRepairAction ? (
         <form action={repairFailedTask} className="contents">
           <input type="hidden" name="task_id" value={action.cta.taskId} />
@@ -973,7 +992,7 @@ function AssistantMessageBubble({
           />
           <button
             type="submit"
-            className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background/80"
           >
             {action.cta.label}
             <Wrench className="h-3 w-3" />
@@ -990,7 +1009,7 @@ function AssistantMessageBubble({
           />
           <button
             type="submit"
-            className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background/80"
           >
             {action.cta.label}
             <RefreshCw className="h-3 w-3" />
@@ -1001,20 +1020,20 @@ function AssistantMessageBubble({
           <input type="hidden" name="project_id" value={projectId} />
           <button
             type="submit"
-            className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background/80"
           >
             {action.cta.label}
             <ArrowRight className="h-3 w-3" />
           </button>
         </form>
       ) : isProviderCredential ? (
-        <span className="shrink-0 text-xs font-medium text-foreground">
+        <span className="shrink-0 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground">
           {action.cta.label}
         </span>
       ) : !isLocalPrompt ? (
         <Link
           href={action.cta.href}
-          className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+          className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background/80"
         >
           {action.cta.label}
           <ArrowRight className="h-3 w-3" />
@@ -1050,6 +1069,7 @@ function ContextSurface({
   filesCount,
   validationSummary,
   latestRunSession,
+  latestRunSummary,
   latestTask,
 }: {
   project: Project;
@@ -1057,6 +1077,7 @@ function ContextSurface({
   filesCount: number;
   validationSummary: ValidationSummary | null;
   latestRunSession: LatestRunSession | null;
+  latestRunSummary: RuntimeSummary | null;
   latestTask: LatestTask | null;
 }) {
   const runActive =
@@ -1065,7 +1086,13 @@ function ContextSurface({
     latestRunSession?.status === "stopping";
 
   if (runActive) {
-    return <RunStatusView project={project} session={latestRunSession!} />;
+    return (
+      <RunStatusView
+        project={project}
+        session={latestRunSession!}
+        summary={latestRunSummary}
+      />
+    );
   }
 
   if (latestTask?.status === "pending" || latestTask?.status === "running") {
@@ -1086,58 +1113,128 @@ function ContextSurface({
 function RunStatusView({
   project,
   session,
+  summary,
 }: {
   project: Project;
   session: LatestRunSession;
+  summary: RuntimeSummary | null;
 }) {
-  const isActive =
+  const isTransitioning =
     session.status === "starting" || session.status === "stopping";
+  const hasPreview =
+    session.status === "running" && Boolean(session.preview_url);
+  const statusLabel = isTransitioning
+    ? session.status === "stopping"
+      ? "Stopping"
+      : "Starting"
+    : hasPreview
+      ? "Preview live"
+      : "Checked";
+
   return (
-    <div className="flex min-h-full flex-col px-6 py-6 text-sm">
-      {isActive ? (
-        <p className="leading-relaxed text-muted-foreground">
-          {session.status === "stopping"
-            ? "Stopping local preview and cleaning up workspace..."
-            : "Validating saved files and starting local preview..."}
-        </p>
+    <ViewportShell
+      eyebrow="Runtime"
+      title={hasPreview ? "Local preview" : "Runtime check"}
+      meta={
+        <StateMarker
+          label={statusLabel}
+          tone={hasPreview ? "active" : "muted"}
+        />
+      }
+    >
+      {isTransitioning ? (
+        <div className="space-y-4">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {session.status === "stopping"
+              ? "Stopping local preview and cleaning up workspace..."
+              : "Validating saved files and starting local preview..."}
+          </p>
+          <ProofRow icon={<Clock3 className="h-4 w-4" />} label="State">
+            {session.status === "stopping"
+              ? "The local process is being stopped and its temporary workspace is being removed."
+              : "No preview URL is shown until a local process responds."}
+          </ProofRow>
+        </div>
       ) : (
-        <>
-          <p className="leading-relaxed text-muted-foreground">
+        <div className="space-y-4">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             {session.preview_url
-              ? `Local preview for ${project.name} is running.`
+              ? `Local preview for ${project.name} is running. This is not deployment or production hosting.`
               : `Saved files for ${project.name} passed the latest runtime check.`}
           </p>
           {session.preview_url ? (
-            <p className="mt-3 break-all font-mono text-xs text-muted-foreground">
-              {session.preview_url}
-            </p>
+            <div className="rounded-md border border-border/70 bg-background/60 px-3 py-2 font-mono text-xs text-foreground shadow-inner">
+              <span className="break-all">{session.preview_url}</span>
+            </div>
           ) : null}
-          <p className="mt-3 text-xs text-muted-foreground">
+          <div className="grid gap-2">
+            <ProofRow
+              icon={<ShieldCheck className="h-4 w-4" />}
+              label="Parser proof"
+            >
+              {summary?.hasCleanValidationEvent
+                ? "Clean validation event recorded for this run."
+                : "Runtime events are the source of parser proof."}
+            </ProofRow>
+            <ProofRow icon={<Play className="h-4 w-4" />} label="Preview proof">
+              {session.preview_url
+                ? "URL was persisted only after local readiness succeeded."
+                : "No live preview endpoint is recorded for this session."}
+            </ProofRow>
+          </div>
+          <p className="text-xs text-muted-foreground">
             Checked {formatRelative(session.started_at)}
           </p>
-        </>
+        </div>
       )}
-    </div>
+    </ViewportShell>
   );
 }
 
 function ValidationSummaryView({ summary }: { summary: ValidationSummary }) {
+  const blocked = summary.blocking_count > 0;
+
   return (
-    <div className="flex min-h-full flex-col px-6 py-6 text-sm">
-      <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-        <span>{summary.blocking_count} blocking</span>
-        <span>
-          {summary.warning_count} warning
-          {summary.warning_count === 1 ? "" : "s"}
-        </span>
-        <span>{summary.info_count} info</span>
+    <ViewportShell
+      eyebrow="Validation"
+      title={blocked ? "Validation blocked" : "Validation proof"}
+      meta={
+        <StateMarker
+          label={blocked ? "Blocked" : "Passed"}
+          tone={blocked ? "destructive" : "active"}
+        />
+      }
+    >
+      <div className="grid grid-cols-3 gap-2">
+        <MetricCell
+          label="Blocking"
+          value={summary.blocking_count}
+          tone={blocked ? "destructive" : "default"}
+        />
+        <MetricCell label="Warnings" value={summary.warning_count} />
+        <MetricCell label="Info" value={summary.info_count} />
       </div>
       {summary.message ? (
-        <p className="mt-4 leading-relaxed text-muted-foreground">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           {summary.message}
         </p>
       ) : null}
-    </div>
+      <ProofRow
+        icon={
+          blocked ? (
+            <CircleAlert className="h-4 w-4" />
+          ) : (
+            <CheckCircle2 className="h-4 w-4" />
+          )
+        }
+        label="Persistence gate"
+        tone={blocked ? "destructive" : "default"}
+      >
+        {blocked
+          ? "Blocking validation evidence is recorded; generated files are not presented as saved proof."
+          : "No blocking validation issues are recorded for the latest generation run."}
+      </ProofRow>
+    </ViewportShell>
   );
 }
 
@@ -1149,13 +1246,14 @@ function FileSummaryView({
   filesCount: number;
 }) {
   return (
-    <div className="flex min-h-full flex-col px-6 py-6 text-sm">
-      <div className="flex flex-col divide-y divide-border/60">
+    <ViewportShell
+      eyebrow="Saved output"
+      title={`${filesCount} saved file${filesCount === 1 ? "" : "s"}`}
+      meta={<StateMarker label="Persisted" tone="active" />}
+    >
+      <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-md border border-border/60 bg-background/35">
         {files.map((file) => (
-          <div
-            key={file.id}
-            className="flex items-start gap-3 py-3 first:pt-0 last:pb-0"
-          >
+          <div key={file.id} className="flex items-start gap-3 px-3 py-3">
             <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0 flex-1">
               <p className="truncate font-mono text-xs text-foreground">
@@ -1170,11 +1268,14 @@ function FileSummaryView({
         ))}
       </div>
       {filesCount > files.length ? (
-        <p className="mt-3 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           Showing the most recently updated {files.length} saved files.
         </p>
       ) : null}
-    </div>
+      <ProofRow icon={<Code2 className="h-4 w-4" />} label="Source of truth">
+        These are persisted project files, not unsaved diagnostic output.
+      </ProofRow>
+    </ViewportShell>
   );
 }
 
@@ -1182,19 +1283,153 @@ function WorkingStateView({ task }: { task: LatestTask }) {
   const operation = generationOperation(task.kind, task.input);
 
   return (
-    <div className="flex min-h-full flex-col justify-center px-6 py-6 text-sm">
-      <p className="text-muted-foreground">{operation.badge} in progress</p>
-      <p className="mt-1 text-xs text-muted-foreground/70">
+    <ViewportShell
+      eyebrow="Generation"
+      title={operation.badge}
+      meta={<StateMarker label="In progress" tone="active" />}
+    >
+      <p className="text-sm leading-relaxed text-muted-foreground">
         {operation.contextMessage}
       </p>
-    </div>
+      <ProofRow icon={<Clock3 className="h-4 w-4" />} label="Save boundary">
+        Files are saved only after validation and persistence pass.
+      </ProofRow>
+    </ViewportShell>
   );
 }
 
 function EmptyStateView() {
   return (
-    <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-      No generation runs yet
+    <ViewportShell
+      eyebrow="Ready"
+      title="Generation viewport"
+      meta={<StateMarker label="Idle" tone="muted" />}
+    >
+      <div className="flex min-h-64 flex-col justify-center gap-4 rounded-md border border-dashed border-border/70 bg-background/25 p-5 text-sm">
+        <p className="font-medium text-foreground">No generation runs yet</p>
+        <p className="max-w-sm leading-relaxed text-muted-foreground">
+          When records exist, this viewport shows validation proof, saved
+          output, repair evidence, or local preview state.
+        </p>
+      </div>
+    </ViewportShell>
+  );
+}
+
+function ViewportShell({
+  eyebrow,
+  title,
+  meta,
+  children,
+}: {
+  eyebrow: string;
+  title: string;
+  meta?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <aside className="flex min-h-full flex-col gap-5 overflow-y-auto px-6 py-6">
+      <div className="flex items-start justify-between gap-4 border-b border-border/70 pb-4">
+        <div className="min-w-0">
+          <p className="font-mono text-[10px] uppercase text-muted-foreground">
+            {eyebrow}
+          </p>
+          <h2 className="mt-1 truncate text-base font-semibold text-foreground">
+            {title}
+          </h2>
+        </div>
+        {meta}
+      </div>
+      <div className="flex flex-1 flex-col gap-4">{children}</div>
+    </aside>
+  );
+}
+
+function StateMarker({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "active" | "muted" | "destructive";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-medium",
+        tone === "active" && "border-accent/40 bg-accent/10 text-accent",
+        tone === "muted" &&
+          "border-border/70 bg-background/50 text-muted-foreground",
+        tone === "destructive" &&
+          "border-destructive/40 bg-destructive/10 text-destructive",
+      )}
+    >
+      <span
+        className={cn(
+          "h-1.5 w-1.5 rounded-full",
+          tone === "active" && "bg-accent",
+          tone === "muted" && "bg-muted-foreground/60",
+          tone === "destructive" && "bg-destructive",
+        )}
+        aria-hidden
+      />
+      {label}
+    </span>
+  );
+}
+
+function ProofRow({
+  icon,
+  label,
+  tone = "default",
+  children,
+}: {
+  icon: ReactNode;
+  label: string;
+  tone?: "default" | "destructive";
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex gap-3 rounded-md border border-border/60 bg-background/35 p-3 text-sm",
+        tone === "destructive" && "border-destructive/35 bg-destructive/5",
+      )}
+    >
+      <span
+        className={cn(
+          "mt-0.5 text-muted-foreground",
+          tone === "destructive" && "text-destructive",
+        )}
+      >
+        {icon}
+      </span>
+      <p className="min-w-0 leading-relaxed text-muted-foreground">
+        <span className="font-medium text-foreground">{label}:</span> {children}
+      </p>
+    </div>
+  );
+}
+
+function MetricCell({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: number;
+  tone?: "default" | "destructive";
+}) {
+  return (
+    <div className="rounded-md border border-border/60 bg-background/35 px-3 py-3">
+      <div
+        className={cn(
+          "font-mono text-xl leading-none text-foreground",
+          tone === "destructive" && "text-destructive",
+        )}
+      >
+        {value}
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }

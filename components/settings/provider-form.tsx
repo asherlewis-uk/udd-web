@@ -61,15 +61,18 @@ export function ProviderForm({
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2 rounded-md border border-border/60 bg-background/35 p-4">
         <Label htmlFor="ai-provider">Default provider</Label>
         <Select
           value={selected}
           onValueChange={(v) => setSelected(v as ProviderId)}
           disabled={isPending}
         >
-          <SelectTrigger id="ai-provider" className="w-full max-w-xs">
+          <SelectTrigger
+            id="ai-provider"
+            className="w-full max-w-sm border-border/70 bg-background/70"
+          >
             <SelectValue placeholder="Select provider" />
           </SelectTrigger>
           <SelectContent>
@@ -84,7 +87,7 @@ export function ProviderForm({
           Choose the default provider. If no saved key exists, UDD uses
           environment credentials when available.
         </p>
-        <p className="text-xs text-muted-foreground">
+        <p className="w-fit rounded-sm border border-border/60 bg-card/60 px-2 py-1 text-xs text-muted-foreground">
           Environment fallback is{" "}
           {environmentCredentialAvailable ? "available" : "not detected"}.
         </p>
@@ -97,7 +100,7 @@ export function ProviderForm({
           <span className="text-xs text-muted-foreground">{message}</span>
         )}
       </div>
-      <div className="flex flex-col gap-4 border-t border-border pt-4">
+      <div className="flex flex-col gap-4 border-t border-border/70 pt-5">
         <div>
           <h3 className="text-sm font-medium">Provider credentials</h3>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -107,8 +110,16 @@ export function ProviderForm({
         </div>
         <div className="flex flex-col gap-4">
           {PROVIDER_OPTIONS.map((provider) => (
-            <div key={provider.id} className="flex flex-col gap-2">
-              <div className="text-sm font-medium">{provider.label}</div>
+            <div
+              key={provider.id}
+              className="flex flex-col gap-3 rounded-md border border-border/60 bg-background/35 p-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium">{provider.label}</div>
+                <span className="rounded-sm border border-border/60 bg-card/60 px-2 py-1 text-xs text-muted-foreground">
+                  {statuses[provider.id] ? "Saved key" : "No saved key"}
+                </span>
+              </div>
               <ProviderCredentialControl
                 providerId={provider.id}
                 providerLabel={provider.label}

@@ -1,5 +1,5 @@
-@import 'tailwindcss';
-@import 'tw-animate-css';
+@import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -84,8 +84,8 @@
 }
 
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback';
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: "Geist", "Geist Fallback";
+  --font-mono: "Geist Mono", "Geist Mono Fallback";
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -133,10 +133,15 @@
     @apply bg-background text-foreground;
   }
   body {
-    font-feature-settings: 'cv11', 'ss01';
+    font-feature-settings: "cv11", "ss01";
     background-image:
-      radial-gradient(ellipse 70% 55% at 15% 8%, oklch(0.57 0.17 38 / 0.10), transparent 55%),
-      radial-gradient(ellipse 55% 45% at 88% 85%, oklch(0.73 0.19 46 / 0.06), transparent 55%);
+      linear-gradient(180deg, oklch(0.18 0.004 255 / 0.42), transparent 34rem),
+      linear-gradient(
+        90deg,
+        oklch(0.73 0.19 46 / 0.045),
+        transparent 42%,
+        oklch(0.48 0.045 220 / 0.045)
+      );
     background-attachment: fixed;
   }
 }
@@ -144,7 +149,15 @@
 /* Subtle grid texture for empty desktop canvases */
 .udd-grid {
   background-image:
-    linear-gradient(to right, color-mix(in oklch, var(--border) 60%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in oklch, var(--border) 60%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      color-mix(in oklch, var(--border) 60%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--border) 60%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 32px 32px;
 }
