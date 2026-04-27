@@ -209,6 +209,7 @@ export async function deleteAITask(formData: FormData) {
 export async function retryFailedTask(formData: FormData) {
   const taskId = String(formData.get("task_id") ?? "").trim();
   const projectId = String(formData.get("project_id") ?? "").trim();
+  const redirectTo = String(formData.get("redirect_to") ?? "").trim();
   if (!taskId || !projectId) throw new Error("Missing task id or project id");
 
   const { supabase, user } = await getUser();
@@ -250,7 +251,13 @@ export async function retryFailedTask(formData: FormData) {
   });
 
   revalidatePath(`/projects/${projectId}/ai`);
-  redirect(`/projects/${projectId}/ai?task=${fresh.id}`);
+  revalidatePath(`/projects/${projectId}`);
+  revalidatePath("/projects");
+  redirect(
+    redirectTo === `/projects/${projectId}`
+      ? redirectTo
+      : `/projects/${projectId}/ai?task=${fresh.id}`,
+  );
 }
 
 /**

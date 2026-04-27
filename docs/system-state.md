@@ -62,7 +62,7 @@ After a repair task is inserted, `repairFailedTask` schedules the same `runAITas
 
 Failed repairs remain normal failed tasks. Because repair tasks carry `input.repair`, the cockpit labels them as repair runs, shows the failed source task id, keeps diagnostic output separate from saved proof, and offers another evidence-backed repair action when blocking validation evidence is present. (app/(app)/projects/[id]/page.tsx:337–351, 418–535, 839–875)
 
-The deterministic cockpit next action has a repair-specific blocked state only when the latest failed task has blocking validation evidence; it renders a form that calls `repairFailedTask` with the failed task id. This is repair-specific recovery, not predictive next-action orchestration. (lib/workspace/next-action.ts:151–179, app/(app)/projects/[id]/page.tsx:900–933)
+The deterministic cockpit next action has repair-specific blocked states only when the latest failed task has blocking validation evidence. It first checks active provider readiness because repair is another generation task; when ready, the cockpit renders an inline form that calls `repairFailedTask` with the failed task id. This is repair-specific recovery from stored evidence, not predictive next-action orchestration. (lib/workspace/next-action.ts:216–239, 484–513; app/(app)/projects/[id]/page.tsx:938–966)
 
 The AI inspection route also exposes repair for failed validation tasks: task detail labels repair tasks from `input.repair` and renders a `Repair` button only when validation events contain a blocking issue. (components/ai/task-detail.tsx:34–69, 313–342)
 
@@ -284,6 +284,16 @@ Validation-check conversation entries are derived from recent `run_sessions` and
 
 The cockpit pollers remain refresh-based: polling is active when any recent task is `pending`/`running` or any recent run session is `starting`/`running`/`stopping`, then `TaskPoller` and `RunPoller` re-fetch the server component tree. (app/(app)/projects/[id]/page.tsx:196–204, 249–250; components/ai/task-poller.tsx:14–20; components/run/run-poller.tsx:14–20)
 
+## Cockpit Next Actions
+
+`deriveNextAction` is a pure deterministic function. It consumes only already-loaded persisted state: `projects.status`, the latest `ai_tasks` row, the latest validation summary from `ai_task_events`, `project_files` count and newest `updated_at`, the latest `run_sessions` row, a run-event summary from `run_events`, and active provider readiness from encrypted-secret presence plus environment fallback detection. It returns a stable `code`, compact description, explicit CTA action kind, and plain-English `reason`. (lib/workspace/next-action.ts:43–124; app/(app)/projects/[id]/page.tsx:175–232, 840–851)
+
+Provider-blocked recommendations are emitted only when the next useful step would require AI generation and the selected provider has neither a saved credential nor AI Gateway environment fallback. The recovery path is the existing inline cockpit credential control; no BYOK, runtime, preview, deploy, or repair behavior is suggested unless its implemented state/action exists. (lib/workspace/next-action.ts:151–169, 216–263, 484–513; components/ai/ai-prompt-form.tsx:203–294)
+
+Generation inspection routes only to detail surfaces: queued/running generation work and data inconsistencies link to the AI task detail, while runtime/parser failures link to the Run surface. Start/continue generation remains local to the prompt box, parser validation starts inline via `startRunAction`, repair starts inline via `repairFailedTask`, and non-validation failed tasks retry inline via `retryFailedTask` when provider readiness allows it. (lib/workspace/next-action.ts:176–204, 252–263, 296–327, 361–396, 439–456; app/(app)/projects/[id]/page.tsx:938–1009)
+
+Validation recommendations are freshness-aware. If saved files exist without a task row, if no run session exists after a completed task, if the latest run predates the newest saved file or completed task, or if a stopped run lacks a clean-validation event, the cockpit recommends starting parser validation inline. A clean `running` run session or clean-validation event allows the cockpit to recommend continuing generation, subject to provider readiness. (lib/workspace/next-action.ts:141–149, 347–415, 418–433, 439–456; app/(app)/projects/[id]/page.tsx:204–232, 840–851)
+
 ---
 
 ## Execution Semantics — Invocation and Ownership
@@ -296,13 +306,15 @@ All of the following require an explicit user action (form submission or button 
 | ------------------------------------ | ------------------------ | --------------------- |
 | Submit AI prompt                     | `createAITask`           | app/actions/ai.ts:51  |
 | Retry a task still in `pending`      | `retryPendingTask`       | app/actions/ai.ts:115 |
-| Retry a `failed` or `cancelled` task | `retryFailedTask`        | app/actions/ai.ts:189 |
-| Repair a failed validation task      | `repairFailedTask`       | app/actions/ai.ts:262 |
+| Retry a `failed` or `cancelled` task | `retryFailedTask`        | app/actions/ai.ts:209 |
+| Repair a failed validation task      | `repairFailedTask`       | app/actions/ai.ts:272 |
 | Cancel a `pending` or `running` task | `cancelAITask`           | app/actions/ai.ts:138 |
 | Delete a terminal-state task         | `deleteAITask`           | app/actions/ai.ts:165 |
 | Start a run session                  | `startRunAction`         | app/actions/run.ts:13 |
 | Stop a run session                   | `stopRunAction`          | app/actions/run.ts:32 |
 | Start a run from a completed AI task | `startRunFromTaskAction` | app/actions/run.ts:49 |
+
+`retryFailedTask` keeps its default AI-detail redirect, but the cockpit may pass `redirect_to=/projects/[id]` so an inline retry returns to the cockpit. The action accepts only that exact same-project cockpit URL for same-page return; otherwise it redirects to the new AI task detail as before. (app/actions/ai.ts:209–260; app/(app)/projects/[id]/page.tsx:967–984)
 
 ### System-triggered (via `after()`, runs after HTTP response flushes)
 

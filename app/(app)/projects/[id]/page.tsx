@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowRight, FileText, Wrench } from "lucide-react";
+import { ArrowRight, FileText, RefreshCw, Wrench } from "lucide-react";
 import { AIPromptForm } from "@/components/ai/ai-prompt-form";
 import { TaskPoller } from "@/components/ai/task-poller";
 import { RunPoller } from "@/components/run/run-poller";
-import { repairFailedTask } from "@/app/actions/ai";
+import { repairFailedTask, retryFailedTask } from "@/app/actions/ai";
 import { startRunAction } from "@/app/actions/run";
 import { createClient } from "@/lib/supabase/server";
 import { formatRelative } from "@/lib/slug";
@@ -28,7 +28,9 @@ import type {
 import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form";
 import type {
   NextAction,
+  ProviderReadiness,
   RunSession,
+  RuntimeSummary,
   ValidationSummary,
 } from "@/lib/workspace/next-action";
 
@@ -171,12 +173,23 @@ export default async function WorkspacePage({
     taskEventsQuery,
     runEventsQuery,
   ]);
+  const environmentCredentialAvailable = hasGatewayEnvironmentCredential();
+  const activeProviderHasSavedCredential =
+    credentialStatuses[providerConfig.id] ?? false;
   const activeProvider: ActiveProviderInfo = {
     id: providerConfig.id,
     label: providerConfig.label,
     model: providerConfig.model,
     credentialStatuses,
-    environmentCredentialAvailable: hasGatewayEnvironmentCredential(),
+    environmentCredentialAvailable,
+  };
+  const providerReadiness: ProviderReadiness = {
+    id: providerConfig.id,
+    label: providerConfig.label,
+    model: providerConfig.model,
+    hasSavedCredential: activeProviderHasSavedCredential,
+    hasEnvironmentCredential: environmentCredentialAvailable,
+    ready: activeProviderHasSavedCredential || environmentCredentialAvailable,
   };
 
   const promptsById = new Map(
@@ -191,6 +204,11 @@ export default async function WorkspacePage({
   const runEventsBySessionId = groupRunEvents(
     (runEventsData ?? []) as RunEventRow[],
   );
+  const latestRunSummary = latestRunSession
+    ? summarizeRuntimeEvents(
+        runEventsBySessionId.get(latestRunSession.id) ?? [],
+      )
+    : null;
   const validationSummary = latestTask
     ? extractValidationSummary(taskEventsByTaskId.get(latestTask.id) ?? [])
     : null;
@@ -210,7 +228,10 @@ export default async function WorkspacePage({
     latestTask,
     validationSummary,
     projectFilesCount: count,
+    latestProjectFileUpdatedAt: savedFiles[0]?.updated_at ?? null,
     latestRunSession,
+    latestRunSummary,
+    providerReadiness,
   });
 
   return (
@@ -818,6 +839,19 @@ function runEventHighlight(
   return events[events.length - 1];
 }
 
+function summarizeRuntimeEvents(events: RunEventRow[]): RuntimeSummary {
+  return {
+    hasCleanValidationEvent: events.some(
+      (event) =>
+        event.level !== "error" &&
+        /Validation complete|Build succeeded/i.test(event.message),
+    ),
+    latestErrorMessage:
+      latestRunEventMatching(events, (event) => event.level === "error")
+        ?.message ?? null,
+  };
+}
+
 function latestRunEventMatching(
   events: RunEventRow[],
   predicate: (event: RunEventRow) => boolean,
@@ -903,16 +937,17 @@ function AssistantMessageBubble({
   action: NextAction;
   projectId: string;
 }) {
-  const aiHref = `/projects/${projectId}/ai`;
-  // Suppress CTAs that point back to the cockpit's own input surface.
-  const isLocalAction =
-    action.cta.href === aiHref || action.cta.href === `/projects/${projectId}`;
-  const isValidationStart = action.cta.label === "Start validation check";
+  const isLocalPrompt = action.cta.action === "local_prompt";
+  const isValidationStart = action.cta.action === "start_validation";
   const isRepairAction = action.cta.action === "repair" && action.cta.taskId;
+  const isRetryAction = action.cta.action === "retry" && action.cta.taskId;
+  const isProviderCredential = action.cta.action === "provider_credential";
 
   return (
     <div className="flex items-baseline gap-2 py-1 text-sm text-muted-foreground/80">
-      <span className="leading-relaxed">{action.description}</span>
+      <span className="leading-relaxed" title={action.reason}>
+        {action.description}
+      </span>
       {isRepairAction ? (
         <form action={repairFailedTask} className="contents">
           <input type="hidden" name="task_id" value={action.cta.taskId} />
@@ -930,6 +965,23 @@ function AssistantMessageBubble({
             <Wrench className="h-3 w-3" />
           </button>
         </form>
+      ) : isRetryAction ? (
+        <form action={retryFailedTask} className="contents">
+          <input type="hidden" name="task_id" value={action.cta.taskId} />
+          <input type="hidden" name="project_id" value={projectId} />
+          <input
+            type="hidden"
+            name="redirect_to"
+            value={`/projects/${projectId}`}
+          />
+          <button
+            type="submit"
+            className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            {action.cta.label}
+            <RefreshCw className="h-3 w-3" />
+          </button>
+        </form>
       ) : isValidationStart ? (
         <form action={startRunAction} className="contents">
           <input type="hidden" name="project_id" value={projectId} />
@@ -941,7 +993,11 @@ function AssistantMessageBubble({
             <ArrowRight className="h-3 w-3" />
           </button>
         </form>
-      ) : !isLocalAction ? (
+      ) : isProviderCredential ? (
+        <span className="shrink-0 text-xs font-medium text-foreground">
+          {action.cta.label}
+        </span>
+      ) : !isLocalPrompt ? (
         <Link
           href={action.cta.href}
           className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-foreground underline-offset-4 hover:underline"

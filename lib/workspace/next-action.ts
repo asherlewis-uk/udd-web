@@ -1,10 +1,9 @@
 /**
  * Deterministic next-action decision engine for the Agent Workspace.
  *
- * Pure function — no I/O, no async, no side effects.
- * All decision branches are grounded in docs/system-state.md and the
- * Product Truth Contract in CLAUDE.md. Comments on each branch cite the
- * exact section that justifies the decision.
+ * Pure function: no I/O, no async, no side effects.
+ * Every branch is grounded in persisted project, task, file, provider,
+ * validation, repair, and runtime state that the cockpit already loaded.
  */
 
 import type { AITaskStatus, Project, RunStatus } from "@/lib/types";
@@ -36,27 +35,77 @@ export type RunSession = {
   id: string;
   status: RunStatus;
   started_at: string | null;
+  created_at: string | null;
+  stopped_at?: string | null;
+  error?: string | null;
+};
+
+export type RuntimeSummary = {
+  hasCleanValidationEvent: boolean;
+  latestErrorMessage: string | null;
+};
+
+export type ProviderReadiness = {
+  id: string;
+  label: string;
+  model: string;
+  hasSavedCredential: boolean;
+  hasEnvironmentCredential: boolean;
+  ready: boolean;
 };
 
 // ---------------------------------------------------------------------------
-// Output type
+// Output types
 // ---------------------------------------------------------------------------
 
+export type NextActionCode =
+  | "start_first_generation"
+  | "validate_orphaned_files"
+  | "task_queued"
+  | "task_running"
+  | "provider_blocked_for_generation"
+  | "provider_blocked_for_repair"
+  | "provider_blocked_for_retry"
+  | "repair_failed_generation"
+  | "retry_failed_generation"
+  | "resume_after_cancel"
+  | "completed_with_blocking_inconsistency"
+  | "completed_without_files"
+  | "runtime_in_progress"
+  | "validation_stale"
+  | "runtime_error_with_files"
+  | "runtime_error_without_files"
+  | "validation_stopped_incomplete"
+  | "validate_warnings"
+  | "validate_saved_files"
+  | "continue_building";
+
+export type NextActionCtaAction =
+  | "local_prompt"
+  | "start_validation"
+  | "repair"
+  | "retry"
+  | "provider_credential"
+  | "inspect_generation"
+  | "inspect_runtime";
+
 export type NextAction = {
-  /** Short headline — what should happen. */
+  /** Stable state code for inspection and docs. */
+  code: NextActionCode;
+  /** Short headline: what should happen. */
   label: string;
-  /** Plain-English explanation for a non-coder. */
+  /** Compact cockpit copy. */
   description: string;
   /** The one CTA the user should take. */
   cta: {
     label: string;
     href: string;
-    action?: "repair";
+    action: NextActionCtaAction;
     taskId?: string;
   };
-  /** Prose reasoning grounded in system-state.md — for auditability. */
+  /** Plain-English reason grounded in loaded persisted state. */
   reason: string;
-  /** Semantic bucket — drives icon / visual tone in the panel. */
+  /** Semantic bucket: drives visual tone in the panel. */
   state: "idle" | "in_progress" | "blocked" | "ready";
 };
 
@@ -69,304 +118,441 @@ export function deriveNextAction(input: {
   latestTask: AITask | null;
   validationSummary: ValidationSummary | null;
   projectFilesCount: number;
+  latestProjectFileUpdatedAt?: string | null;
   latestRunSession: RunSession | null;
+  latestRunSummary?: RuntimeSummary | null;
+  providerReadiness?: ProviderReadiness | null;
 }): NextAction {
   const {
     project,
     latestTask,
     validationSummary,
     projectFilesCount,
+    latestProjectFileUpdatedAt = null,
     latestRunSession,
+    latestRunSummary = null,
+    providerReadiness = null,
   } = input;
-  const aiHref = `/projects/${project.id}/ai`;
-  const runHref = `/projects/${project.id}/run`;
+  const cockpitHref = `/projects/${project.id}`;
+  const aiHref = `${cockpitHref}/ai`;
+  const runHref = `${cockpitHref}/run`;
+  const taskHref = latestTask ? `${aiHref}?task=${latestTask.id}` : aiHref;
 
-  // ── 1. No tasks exist ─────────────────────────────────────────────────────
-  // No ai_tasks row exists for this project. Nothing has been generated.
-  // Work must be explicitly initiated by the user — there is no automatic
-  // task scheduling or background orchestration.
-  // (system-state.md §Execution Semantics — Explicit absence of automation:
-  //  "No automatic task-to-run chaining … a run session is created only
-  //  when the user explicitly calls startRunAction or startRunFromTaskAction.")
+  // No task row, but persisted files exist. Since runtime validation reads
+  // project_files directly, validate those files before recommending more AI.
+  if (!latestTask && projectFilesCount > 0) {
+    return startValidationAction({
+      code: "validate_orphaned_files",
+      href: runHref,
+      reason:
+        "project_files contains saved files, but there is no ai_tasks row to explain their last generation. Parser validation can inspect the saved files directly.",
+      description: `${projectFilesCount} saved file${plural(projectFilesCount)} exist without generation history. Start a validation check before continuing.`,
+    });
+  }
+
+  // No task and no files. The next useful generation action is the first
+  // prompt, but only if the active provider can actually authenticate.
   if (!latestTask) {
+    const providerBlock = providerBlockedAction({
+      code: "provider_blocked_for_generation",
+      providerReadiness,
+      href: cockpitHref,
+      purpose: "start the first generation run",
+    });
+    if (providerBlock) return providerBlock;
+
     return {
+      code: "start_first_generation",
       label: "Start a generation run",
       description:
-        "No generation runs yet. Describe the first scaffold or change and UDD will draft saved files.",
-      cta: { label: "Start run", href: aiHref },
-      reason:
-        "No ai_tasks row for this project. Work is entirely user-initiated.",
+        project.status === "draft"
+          ? "This draft has no saved files yet. Describe the first scaffold or change and UDD will draft saved files."
+          : "No generation runs yet. Describe the first scaffold or change and UDD will draft saved files.",
+      cta: {
+        label: "Use prompt box",
+        href: cockpitHref,
+        action: "local_prompt",
+      },
+      reason: `Project status is ${project.status}, ai_tasks has no latest row, and project_files is empty. Work must be started by a user prompt.`,
       state: "idle",
     };
   }
 
   const operation = nextActionOperation(latestTask.kind);
 
-  // ── 2. Task pending ───────────────────────────────────────────────────────
-  // The ai_tasks row was inserted by createAITask and the after() callback
-  // has been scheduled but has not yet claimed the task. The system will
-  // transition it to running once runAITask executes.
-  // (system-state.md §AI Pipeline — Task state transitions:
-  //  "pending → running claim via conditional update eq('status','pending')")
   if (latestTask.status === "pending") {
     return {
+      code: "task_queued",
       label: `${operation.label} queued`,
       description: `${operation.sentenceName} is queued and will start drafting files shortly.`,
-      cta: { label: "Inspect generation run", href: aiHref },
+      cta: {
+        label: "Inspect generation run",
+        href: taskHref,
+        action: "inspect_generation",
+        taskId: latestTask.id,
+      },
       reason:
-        "Task status is pending — runAITask has been scheduled via after() but has not started yet " +
-        "(system-state.md §AI Pipeline Task state transitions).",
+        "The latest ai_tasks row is pending. The after() callback has been scheduled, but runAITask has not claimed the task yet.",
       state: "in_progress",
     };
   }
 
-  // ── 3. Task running ───────────────────────────────────────────────────────
-  // The model is generating output. The task will transition to completed
-  // (if validation passes and files persist) or failed (on any error).
-  // No user action is meaningful until the task settles.
-  // (system-state.md §AI Pipeline — Task state transitions:
-  //  "running → completed after validation passes AND persistFiles succeeds"
-  //  "running → failed on any error: generation, timeout, validation, or persistence")
   if (latestTask.status === "running") {
     return {
+      code: "task_running",
       label: `${operation.label} in progress`,
       description: operation.runningDescription,
-      cta: { label: "Inspect generation run", href: aiHref },
+      cta: {
+        label: "Inspect generation run",
+        href: taskHref,
+        action: "inspect_generation",
+        taskId: latestTask.id,
+      },
       reason:
-        "Task status is running — the model is generating output. Outcome will be " +
-        "completed or failed (system-state.md §AI Pipeline Task state transitions).",
+        "The latest ai_tasks row is running. Generated output is not saved until validation and persistence both pass.",
       state: "in_progress",
     };
   }
 
-  // ── 3b / 4. Task failed ───────────────────────────────────────────────────
-  // running → failed on any error: generation, timeout, validation, or
-  // persistence. No files are written on failure.
-  // (system-state.md §AI Pipeline — Task state transitions:
-  //  "running → failed on any error: generation, timeout, validation, or persistence")
-  // Sub-case: if the validation summary shows blocking issues, the failure was
-  // specifically caused by validateProject throwing — zero files written.
-  // (system-state.md §Staging vs persistence order §2:
-  //  "validateProject called … Blocking issues → throws → task ends failed, no files written")
   if (latestTask.status === "failed") {
     const blockingCount = validationSummary?.blocking_count ?? 0;
     const repairAttempt = isRepairTaskInput(latestTask.input);
+
+    if (blockingCount > 0) {
+      const providerBlock = providerBlockedAction({
+        code: "provider_blocked_for_repair",
+        providerReadiness,
+        href: cockpitHref,
+        purpose: "queue an evidence-backed repair run",
+      });
+      if (providerBlock) return providerBlock;
+
+      return {
+        code: "repair_failed_generation",
+        label: repairAttempt
+          ? "Repair attempt failed"
+          : "Repair failed generation run",
+        description: `The ${operation.name} failed validation with ${blockingCount} blocking issue${plural(blockingCount)}. Use the recorded validation evidence to queue a repair run.`,
+        cta: {
+          label: "Repair with evidence",
+          href: cockpitHref,
+          action: "repair",
+          taskId: latestTask.id,
+        },
+        reason:
+          "The failed ai_tasks row has a validation summary with blocking issues. repairFailedTask can use stored validation events and staged output from that same task.",
+        state: "blocked",
+      };
+    }
+
+    const providerBlock = providerBlockedAction({
+      code: "provider_blocked_for_retry",
+      providerReadiness,
+      href: cockpitHref,
+      purpose: "retry the failed generation run",
+    });
+    if (providerBlock) return providerBlock;
+
     return {
-      label:
-        blockingCount > 0
-          ? repairAttempt
-            ? "Repair attempt failed"
-            : "Repair failed generation run"
-          : "Review failed generation run",
-      description:
-        blockingCount > 0
-          ? `The ${operation.name} failed validation with ${blockingCount} blocking issue${blockingCount === 1 ? "" : "s"}. Use the recorded validation evidence to queue a repair run.`
-          : `The last ${operation.name} failed. Review the error and try again.`,
+      code: "retry_failed_generation",
+      label: "Retry failed generation run",
+      description: `The last ${operation.name} failed without blocking validation evidence. Retry the same recorded work item, or inspect the details first.`,
       cta: {
-        label:
-          blockingCount > 0 ? "Repair with evidence" : "Inspect generation run",
-        href: aiHref,
-        action: blockingCount > 0 ? "repair" : undefined,
-        taskId: blockingCount > 0 ? latestTask.id : undefined,
+        label: "Retry run",
+        href: cockpitHref,
+        action: "retry",
+        taskId: latestTask.id,
       },
       reason:
-        blockingCount > 0
-          ? `Task failed because validateProject emitted blocking issues; no files written ` +
-            `(system-state.md §Staging vs persistence order §2, Intentional Constraint §2). ` +
-            `Repair is user-triggered and uses stored validation events from the failed task.`
-          : "Task failed — generation, timeout, or persistence error " +
-            "(system-state.md §AI Pipeline Task state transitions).",
+        "The latest ai_tasks row is failed, but no blocking validation summary is recorded. retryFailedTask is the implemented recovery path for failed tasks.",
       state: "blocked",
     };
   }
 
-  // ── Cancelled ─────────────────────────────────────────────────────────────
-  // The user explicitly cancelled the task. This is a deliberate action, not
-  // an error. No automatic retry exists — the user must submit a new prompt.
-  // (system-state.md §Execution Semantics — Explicit absence of automation:
-  //  "No automatic fail-to-retry: a failed task is retried only when the user
-  //  explicitly calls retryFailedTask.")
   if (latestTask.status === "cancelled") {
+    const providerBlock = providerBlockedAction({
+      code: "provider_blocked_for_generation",
+      providerReadiness,
+      href: cockpitHref,
+      purpose: "submit another generation prompt",
+    });
+    if (providerBlock) return providerBlock;
+
     return {
+      code: "resume_after_cancel",
       label: "Resume generation",
       description:
         "The last generation run was cancelled. Submit a new prompt to continue.",
-      cta: { label: "Start new run", href: aiHref },
+      cta: {
+        label: "Use prompt box",
+        href: cockpitHref,
+        action: "local_prompt",
+      },
       reason:
-        "Task was cancelled by the user. No automatic retry — " +
-        "(system-state.md §Execution Semantics Explicit absence of automation).",
+        "The latest ai_tasks row is cancelled. There is no automatic retry, so recovery starts from an explicit user prompt.",
       state: "idle",
     };
   }
 
-  // ── From here: latestTask.status === "completed" ─────────────────────────
-  //
-  // Per Intentional Constraint §1 (system-state.md):
-  //   "completed implies validateProject passed (blocking_count === 0)
-  //    AND persistFiles succeeded."
-  // This means:
-  //   a) No blocking issues can be present in the validation summary.
-  //   b) At least some files must exist in project_files.
-  // Both sub-branches below are defensive — they should not be reachable
-  // under normal operation.
-
-  // ── 4. Defensive: completed with blocking issues ──────────────────────────
-  // impossible by design — completed implies validation passed with zero blocking.
-  // (system-state.md §Intentional Constraints §1:
-  //  "completed implies … validateProject passed … AND persistFiles succeeded"
-  //  §Staging vs persistence order §2:
-  //  "Blocking issues → throws → task ends failed, no files written")
-  // If we observe this state, it is a data inconsistency — surface it.
+  // From here, latestTask.status === "completed". In normal operation this
+  // means validateProject passed and persistFiles returned successfully.
   const blockingOnCompleted = validationSummary?.blocking_count ?? 0;
   if (blockingOnCompleted > 0) {
     return {
+      code: "completed_with_blocking_inconsistency",
       label: "Unexpected state",
       description:
         "A saved generation run has blocking validation issues recorded. This should not occur.",
-      cta: { label: "Inspect generation run", href: aiHref },
+      cta: {
+        label: "Inspect generation run",
+        href: taskHref,
+        action: "inspect_generation",
+        taskId: latestTask.id,
+      },
       reason:
-        "completed+blocking_count>0 is impossible per Intentional Constraint §1 " +
-        "(system-state.md). Data inconsistency detected.",
+        "The latest ai_tasks row is completed, but its validation summary reports blocking issues. Completed tasks should only exist after blocking validation passed.",
       state: "blocked",
     };
   }
 
-  // ── 7. Completed but no project_files ─────────────────────────────────────
-  // Per Intentional Constraint §1: completed implies persistFiles returned
-  // without error, so projectFilesCount should be > 0. Zero files after
-  // completion is a data inconsistency.
-  // (system-state.md §Intentional Constraints §1:
-  //  "The Files tab and the runtime pipeline read project_files without
-  //  checking task status. A task marked completed with missing or empty
-  //  files would silently produce an incorrect view.")
   if (projectFilesCount === 0) {
     return {
+      code: "completed_without_files",
       label: "Saved files missing",
       description:
-        "The last generation run finished but no saved files were found. This may indicate a data issue.",
-      cta: { label: "Inspect generation run", href: aiHref },
+        "The last generation run finished but no saved files were found. Inspect the work item before continuing.",
+      cta: {
+        label: "Inspect generation run",
+        href: taskHref,
+        action: "inspect_generation",
+        taskId: latestTask.id,
+      },
       reason:
-        "completed implies persistFiles succeeded (Intentional Constraint §1) but " +
-        "projectFilesCount is 0. Data inconsistency.",
+        "The latest ai_tasks row is completed, but project_files has count 0. Completed should imply persisted saved files.",
       state: "blocked",
     };
   }
 
-  // ── 9. Run session in progress ────────────────────────────────────────────
-  // A validation-only run is active. The parser is processing files.
-  // (system-state.md §Runtime Pipeline — State machine:
-  //  "[none] → starting startRun inserts with status='starting'"
-  //  "starting → running all files parse cleanly"
-  //  "running/starting → stopping stopRun conditional update")
-  // The runtime does not serve an app — validation-only.
-  // (system-state.md §Runtime Pipeline — preview_url behavior:
-  //  "preview_url is always null at runtime")
   if (
     latestRunSession?.status === "starting" ||
     latestRunSession?.status === "stopping"
   ) {
     return {
+      code: "runtime_in_progress",
       label: "Validation check in progress",
       description:
-        "UDD is checking saved files with a parser. UDD can check files, but does not run or preview the app yet.",
-      cta: { label: "Inspect validation check", href: runHref },
-      reason:
-        "Run session status is starting/stopping — the parser is processing files " +
-        "(system-state.md §Runtime Pipeline state machine). Nothing is served.",
+        "UDD is checking saved files with a parser. It validates files only; nothing is served or previewed.",
+      cta: {
+        label: "Inspect validation check",
+        href: runHref,
+        action: "inspect_runtime",
+      },
+      reason: `The latest run_sessions row is ${latestRunSession.status}. Runtime work is parser validation only, and preview_url remains null.`,
       state: "in_progress",
     };
   }
 
-  // ── 11. Run session completed cleanly ────────────────────────────────────
-  // status === "running" means all files parsed cleanly — the validation
-  // check passed. Nothing is executed or served; the session stays "running"
-  // to signal clean parse state.
-  // (system-state.md §Runtime Pipeline — State machine:
-  //  "starting → running all files parse cleanly")
-  // (system-state.md §Intentional Constraints §4:
-  //  "run_sessions.preview_url must remain null — nothing is served")
-  if (latestRunSession?.status === "running") {
-    return {
-      label: "Continue building",
-      description: `${projectFilesCount} saved file${projectFilesCount === 1 ? "" : "s"} passed the validation check. Describe the next change to keep going.`,
-      cta: { label: "Continue building", href: aiHref },
+  const runIsStale = isRunStale({
+    latestRunSession,
+    latestTask,
+    latestProjectFileUpdatedAt,
+  });
+
+  if (latestRunSession && runIsStale) {
+    return startValidationAction({
+      code: "validation_stale",
+      href: runHref,
       reason:
-        "Run session status is running — all files parsed cleanly " +
-        "(system-state.md §Runtime Pipeline state machine). Nothing is served.",
-      state: "ready",
-    };
+        "The latest run session was recorded before the newest saved file or completed task. It does not validate the current project_files state.",
+      description: `${projectFilesCount} saved file${plural(projectFilesCount)} changed after the last validation check. Start a fresh parser check.`,
+    });
   }
 
-  // ── 10. Run session error ─────────────────────────────────────────────────
-  // One or more files failed to parse. The session ended in error state.
-  // (system-state.md §Runtime Pipeline — State machine:
-  //  "starting → error any file fails to parse"
-  //  "starting → error no files found after loading")
   if (latestRunSession?.status === "error") {
+    if (projectFilesCount === 0) {
+      const providerBlock = providerBlockedAction({
+        code: "provider_blocked_for_generation",
+        providerReadiness,
+        href: cockpitHref,
+        purpose: "generate files after the failed validation check",
+      });
+      if (providerBlock) return providerBlock;
+
+      return {
+        code: "runtime_error_without_files",
+        label: "Start a generation run",
+        description:
+          "The last validation check found no files to validate. Describe a scaffold or edit to create saved files first.",
+        cta: {
+          label: "Use prompt box",
+          href: cockpitHref,
+          action: "local_prompt",
+        },
+        reason:
+          "The latest run_sessions row is error and project_files is empty, so another validation check cannot produce useful output until files exist.",
+        state: "blocked",
+      };
+    }
+
     return {
+      code: "runtime_error_with_files",
       label: "Review validation output",
       description:
-        "The last validation check found parse errors. Revise the prompt or inspect the details.",
-      cta: { label: "Inspect validation check", href: runHref },
-      reason:
-        "Run session status is error — at least one file failed to parse " +
-        "(system-state.md §Runtime Pipeline state machine).",
+        "The last parser validation check failed. Inspect the recorded output, then submit an edit prompt here if files need changes.",
+      cta: {
+        label: "Inspect validation check",
+        href: runHref,
+        action: "inspect_runtime",
+      },
+      reason: latestRunSummary?.latestErrorMessage
+        ? `The latest run_sessions row is error and recorded: ${latestRunSummary.latestErrorMessage}`
+        : "The latest run_sessions row is error. Runtime recovery starts by inspecting persisted run_events.",
       state: "blocked",
     };
   }
 
-  // ── 5. Completed with warnings, no run session ────────────────────────────
-  // Validation passed (no blocking — see Intentional Constraint §1 above),
-  // but warnings were emitted. Warnings do not block task completion.
-  // (system-state.md §Validation Layer — ok definition:
-  //  "report.ok === true iff blockingCount === 0.
-  //   Warnings and info issues do not flip this bit.")
-  // A validation-only run will surface the warnings in per-file context.
+  if (
+    latestRunSession?.status === "stopped" &&
+    !latestRunSummary?.hasCleanValidationEvent
+  ) {
+    return startValidationAction({
+      code: "validation_stopped_incomplete",
+      href: runHref,
+      reason:
+        "The latest run session was stopped and has no persisted clean-validation event. Current files still need a parser check.",
+      description:
+        "The last validation check stopped before a clean result was recorded. Start another parser check for the saved files.",
+    });
+  }
+
   const warnings = validationSummary?.warning_count ?? 0;
   if (warnings > 0 && !latestRunSession) {
-    return {
-      label: "Start validation check",
-      description: `The ${operation.name} saved files with ${warnings} warning${warnings === 1 ? "" : "s"}. Start a validation check to review per-file parser results.`,
-      cta: { label: "Start validation check", href: runHref },
-      reason:
-        `Warnings present (warning_count=${warnings}) — they do not block completion ` +
-        `(system-state.md §Validation Layer ok definition). No run session yet.`,
-      state: "ready",
-    };
+    return startValidationAction({
+      code: "validate_warnings",
+      href: runHref,
+      reason: `The completed task recorded ${warnings} validation warning${plural(warnings)}. Warnings do not block save, but parser validation can inspect the saved files.`,
+      description: `The ${operation.name} saved files with ${warnings} warning${plural(warnings)}. Start a validation check to review per-file parser results.`,
+    });
   }
 
-  // ── 8. Files exist, no run session ───────────────────────────────────────
-  // Task completed cleanly, files persisted. No run session exists yet.
-  // Run sessions are never created automatically — the user must initiate.
-  // (system-state.md §Execution Semantics — Explicit absence of automation:
-  //  "No automatic task-to-run chaining: a run session is created only
-  //  when the user explicitly calls startRunAction or startRunFromTaskAction.")
   if (!latestRunSession) {
-    return {
-      label: "Start validation check",
-      description: `${projectFilesCount} saved file${projectFilesCount === 1 ? "" : "s"} from the ${operation.name} are ready. Start a validation check to confirm per-file parse results.`,
-      cta: { label: "Start validation check", href: runHref },
+    return startValidationAction({
+      code: "validate_saved_files",
+      href: runHref,
       reason:
-        "Task completed cleanly, no run session. Run sessions are user-initiated " +
-        "(system-state.md §Execution Semantics Explicit absence of automation).",
-      state: "ready",
-    };
+        "The latest task completed and project_files has saved files, but no run_sessions row exists for this project.",
+      description: `${projectFilesCount} saved file${plural(projectFilesCount)} from the ${operation.name} are ready. Start a validation check to confirm parser results.`,
+    });
   }
 
-  // ── 6. Completed cleanly, terminal run session (stopped) ─────────────────
-  // Run session reached a terminal state (stopped). The project has files,
-  // a completed task, and a finished run. The natural next step is to
-  // keep iterating with the AI.
+  const providerBlock = providerBlockedAction({
+    code: "provider_blocked_for_generation",
+    providerReadiness,
+    href: cockpitHref,
+    purpose: "continue building with another generation prompt",
+  });
+  if (providerBlock) return providerBlock;
+
   return {
+    code: "continue_building",
     label: "Continue building",
     description:
-      "Submit a new scaffold, edit, or refactor prompt to continue the project.",
-    cta: { label: "Continue building", href: aiHref },
+      latestRunSummary?.hasCleanValidationEvent ||
+      latestRunSession.status === "running"
+        ? `${projectFilesCount} saved file${plural(projectFilesCount)} passed the validation check. Describe the next change to keep going.`
+        : "Submit a new scaffold, edit, or refactor prompt to continue the project.",
+    cta: { label: "Use prompt box", href: cockpitHref, action: "local_prompt" },
     reason:
-      "Task completed cleanly, files persisted, run session exists in terminal state. " +
-      "Ready for the next iteration.",
+      "The latest task completed, saved files exist, and no newer unvalidated file state is detected. The next generation step must be user-initiated.",
     state: "ready",
   };
+}
+
+function startValidationAction(args: {
+  code:
+    | "validate_orphaned_files"
+    | "validation_stale"
+    | "validation_stopped_incomplete"
+    | "validate_warnings"
+    | "validate_saved_files";
+  href: string;
+  reason: string;
+  description: string;
+}): NextAction {
+  return {
+    code: args.code,
+    label: "Start validation check",
+    description: args.description,
+    cta: {
+      label: "Start validation check",
+      href: args.href,
+      action: "start_validation",
+    },
+    reason: args.reason,
+    state: "ready",
+  };
+}
+
+function providerBlockedAction(args: {
+  code:
+    | "provider_blocked_for_generation"
+    | "provider_blocked_for_repair"
+    | "provider_blocked_for_retry";
+  providerReadiness: ProviderReadiness | null | undefined;
+  href: string;
+  purpose: string;
+}): NextAction | null {
+  const provider = args.providerReadiness;
+  if (!provider || provider.ready) return null;
+
+  return {
+    code: args.code,
+    label: "Add provider credential",
+    description: `${provider.label} is selected for new generation work, but no saved credential or environment fallback is available. Add a credential below before trying to ${args.purpose}.`,
+    cta: {
+      label: "Use provider credential field below",
+      href: args.href,
+      action: "provider_credential",
+    },
+    reason: `Provider readiness is blocked: selected provider=${provider.id}, saved credential=${provider.hasSavedCredential}, environment fallback=${provider.hasEnvironmentCredential}.`,
+    state: "blocked",
+  };
+}
+
+function isRunStale(input: {
+  latestRunSession: RunSession | null;
+  latestTask: AITask;
+  latestProjectFileUpdatedAt: string | null;
+}): boolean {
+  const { latestRunSession, latestTask, latestProjectFileUpdatedAt } = input;
+  if (!latestRunSession) return false;
+
+  const latestPersistedAt = latestTimestamp([
+    latestProjectFileUpdatedAt,
+    latestTask.finished_at,
+  ]);
+  const latestRunRecordedAt = latestTimestamp([
+    latestRunSession.started_at,
+    latestRunSession.created_at,
+  ]);
+  if (!latestPersistedAt || !latestRunRecordedAt) return false;
+
+  return Date.parse(latestRunRecordedAt) < Date.parse(latestPersistedAt);
+}
+
+function latestTimestamp(
+  values: Array<string | null | undefined>,
+): string | null {
+  let latest: string | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    if (!latest || Date.parse(value) > Date.parse(latest)) latest = value;
+  }
+  return latest;
+}
+
+function plural(count: number): string {
+  return count === 1 ? "" : "s";
 }
 
 function nextActionOperation(kind: string): {
