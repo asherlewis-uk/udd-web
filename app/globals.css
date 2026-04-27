@@ -5,22 +5,22 @@
 
 /* UDD — dark-first desktop IDE aesthetic.
    Palette (5 tokens):
-     - background  : near-black canvas
-     - surface     : elevated panel
+     - background  : warm near-black canvas
+     - surface     : elevated panel (glass, semi-transparent)
      - foreground  : off-white text
      - muted       : dim neutral text / chrome
-     - accent      : emerald — used only for "active / running / success"
+     - accent      : papaya — used only for "active / running / success"
      - destructive : red — used only for errors / destructive intent
 */
 
 :root {
-  --background: oklch(0.145 0 0);
+  --background: oklch(0.13 0.003 40);
   --foreground: oklch(0.975 0 0);
 
-  --card: oklch(0.185 0 0);
+  --card: oklch(0.185 0.003 40 / 0.82);
   --card-foreground: oklch(0.975 0 0);
 
-  --popover: oklch(0.19 0 0);
+  --popover: oklch(0.19 0.002 40 / 0.94);
   --popover-foreground: oklch(0.975 0 0);
 
   --primary: oklch(0.975 0 0);
@@ -32,20 +32,20 @@
   --muted: oklch(0.22 0 0);
   --muted-foreground: oklch(0.65 0 0);
 
-  --accent: oklch(0.72 0.17 162);
-  --accent-foreground: oklch(0.16 0 0);
+  --accent: oklch(0.73 0.19 46);
+  --accent-foreground: oklch(0.14 0.005 40);
 
   --destructive: oklch(0.62 0.23 27);
   --destructive-foreground: oklch(0.975 0 0);
 
   --border: oklch(0.26 0 0);
   --input: oklch(0.24 0 0);
-  --ring: oklch(0.72 0.17 162);
+  --ring: oklch(0.73 0.19 46);
 
-  --chart-1: oklch(0.72 0.17 162);
+  --chart-1: oklch(0.73 0.19 46);
   --chart-2: oklch(0.65 0 0);
   --chart-3: oklch(0.45 0 0);
-  --chart-4: oklch(0.85 0.12 162);
+  --chart-4: oklch(0.83 0.14 58);
   --chart-5: oklch(0.62 0.23 27);
 
   --radius: 0.5rem;
@@ -57,7 +57,7 @@
   --sidebar-accent: oklch(0.23 0 0);
   --sidebar-accent-foreground: oklch(0.975 0 0);
   --sidebar-border: oklch(0.26 0 0);
-  --sidebar-ring: oklch(0.72 0.17 162);
+  --sidebar-ring: oklch(0.73 0.19 46);
 }
 
 /* Keep a sane light fallback, but the app forces .dark on <html>. */
@@ -74,13 +74,13 @@
   --secondary-foreground: oklch(0.18 0 0);
   --muted: oklch(0.96 0 0);
   --muted-foreground: oklch(0.5 0 0);
-  --accent: oklch(0.6 0.15 162);
+  --accent: oklch(0.63 0.18 46);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.58 0.23 27);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.92 0 0);
   --input: oklch(0.92 0 0);
-  --ring: oklch(0.6 0.15 162);
+  --ring: oklch(0.63 0.18 46);
 }
 
 @theme inline {
@@ -134,6 +134,10 @@
   }
   body {
     font-feature-settings: 'cv11', 'ss01';
+    background-image:
+      radial-gradient(ellipse 70% 55% at 15% 8%, oklch(0.57 0.17 38 / 0.10), transparent 55%),
+      radial-gradient(ellipse 55% 45% at 88% 85%, oklch(0.73 0.19 46 / 0.06), transparent 55%);
+    background-attachment: fixed;
   }
 }
 

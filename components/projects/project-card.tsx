@@ -40,7 +40,7 @@ export function ProjectCard({
   const archived = project.status === "archived"
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card transition hover:border-border/80 hover:bg-card/80">
+    <div className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card backdrop-blur-md transition hover:border-border/80 hover:bg-card/80">
       <Link
         href={`/projects/${project.id}`}
         className="flex flex-1 flex-col gap-4 p-5 outline-none focus-visible:bg-card/90"

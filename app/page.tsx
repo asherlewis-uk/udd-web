@@ -14,7 +14,7 @@ export default async function Home() {
   if (user) redirect("/projects")
 
   return (
-    <div className="relative min-h-screen bg-background">
+    <div className="relative min-h-screen">
       <div className="udd-grid pointer-events-none absolute inset-0 opacity-[0.25]" aria-hidden />
       <div className="relative flex min-h-screen flex-col">
         <header className="flex items-center justify-between px-6 py-5">
