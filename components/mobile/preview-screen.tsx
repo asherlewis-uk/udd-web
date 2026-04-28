@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { CircleAlert, ExternalLink, Loader2, Play, Square } from "lucide-react";
 import { startRunAction } from "@/app/actions/run";
 import { BottomControls } from "./bottom-controls";
@@ -41,15 +40,9 @@ export function PreviewScreen({
           <div className="truncate text-sm font-medium text-foreground">
             {projectName}
           </div>
-          <div className="text-xs text-muted-foreground">Local preview</div>
+          <div className="text-xs text-muted-foreground">Preview</div>
         </div>
-        <button
-          type="button"
-          onClick={onActionsClick}
-          className="flex h-11 items-center rounded-full px-2 text-sm text-foreground transition active:scale-95"
-        >
-          Actions
-        </button>
+        <div className="h-11 w-11" aria-hidden />
       </div>
 
       <div className="min-h-0 flex-1 px-4 py-4">
@@ -64,7 +57,7 @@ export function PreviewScreen({
                 target="_blank"
                 rel="noreferrer"
                 className="shrink-0 text-muted-foreground hover:text-foreground"
-                aria-label="Open local preview"
+                aria-label="Open preview"
               >
                 <ExternalLink className="h-4 w-4" />
               </a>
@@ -83,6 +76,7 @@ export function PreviewScreen({
             status={status}
             filesCount={filesCount}
             error={session?.error ?? null}
+            onBackToChat={onBackToChat}
           />
         )}
       </div>
@@ -115,14 +109,17 @@ function PreviewState({
   status,
   filesCount,
   error,
+  onBackToChat,
 }: {
   projectId: string;
   status: MobileRunSession["status"] | "idle";
   filesCount: number;
   error: string | null;
+  onBackToChat: () => void;
 }) {
   const canStart =
-    status === "idle" || status === "stopped" || status === "error";
+    filesCount > 0 &&
+    (status === "idle" || status === "stopped" || status === "error");
   const copy = previewCopy(status, filesCount, error);
 
   return (
@@ -153,17 +150,20 @@ function PreviewState({
               className="rounded-full bg-foreground px-6 py-3 text-sm font-medium text-background transition active:scale-95"
             >
               {status === "error" || status === "stopped"
-                ? "Restart local preview"
-                : "Start local preview"}
+                ? "Restart preview"
+                : "Start preview"}
             </button>
           </form>
         ) : null}
-        <Link
-          href={`/projects/${projectId}/run`}
-          className="rounded-full border border-border/70 px-5 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
-        >
-          Inspect run
-        </Link>
+        {filesCount === 0 ? (
+          <button
+            type="button"
+            onClick={onBackToChat}
+            className="rounded-full border border-border/70 px-5 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
+          >
+            Back to chat
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -176,50 +176,50 @@ function previewCopy(
 ): { title: string; body: string } {
   if (status === "starting") {
     return {
-      title: "Starting local preview",
-      body: "UDD is validating saved files and starting a bounded local Next dev process when the project shape supports it.",
+      title: "Starting preview",
+      body: "UDD is checking the saved files and opening a preview when this project supports it.",
     };
   }
 
   if (status === "running") {
     return {
-      title: "Preview endpoint missing",
-      body: "This run is marked running, but no real preview URL is recorded. Inspect the run output before trusting the session.",
+      title: "Preview unavailable",
+      body: "This run is active, but no preview URL was recorded. Open Console for details.",
     };
   }
 
   if (status === "stopping") {
     return {
-      title: "Stopping local preview",
-      body: "The local process is stopping and its temporary workspace is being cleaned up.",
+      title: "Stopping preview",
+      body: "The preview is stopping.",
     };
   }
 
   if (status === "stopped") {
     return {
       title: "Preview stopped",
-      body: "Start again to validate the current saved files and launch a new local preview when supported.",
+      body: "Start again when you want to check the current app.",
     };
   }
 
   if (status === "error") {
     return {
-      title: "Run failed",
+      title: "Preview blocked",
       body:
         error ??
-        "The run ended with a validation, startup, dependency, or runtime error. Inspect the recorded logs for details.",
+        "Preview could not start. Open Console for details, then go back to chat or code.",
     };
   }
 
   if (filesCount === 0) {
     return {
-      title: "No saved files yet",
-      body: "Generate files first. The preview surface only uses files that passed validation and persistence.",
+      title: "Preview will appear here",
+      body: "Go back to chat to generate your app.",
     };
   }
 
   return {
-    title: "No local preview yet",
-    body: `${filesCount} saved file${filesCount === 1 ? "" : "s"} can be checked by starting a local preview run.`,
+    title: "Preview will appear here",
+    body: "Start preview to check the current app.",
   };
 }

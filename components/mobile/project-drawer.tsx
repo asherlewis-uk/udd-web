@@ -45,7 +45,7 @@ export function ProjectDrawer({
         aria-label="Close project drawer"
       />
 
-      <aside className="fixed inset-y-0 left-0 z-50 w-[86%] max-w-sm border-r border-border/70 bg-background shadow-[24px_0_80px_-64px_rgba(0,0,0,0.95)]">
+      <aside className="fixed inset-y-0 left-0 z-50 w-[min(100%,24rem)] border-r border-border/70 bg-background shadow-[24px_0_80px_-64px_rgba(0,0,0,0.95)]">
         <div className="flex h-full flex-col">
           <div className="flex flex-col gap-3 p-4 pt-safe">
             <div className="flex items-center justify-between">

@@ -1,27 +1,9 @@
-import type { ReactNode } from "react";
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import {
-  ArrowRight,
-  CheckCircle2,
-  CircleAlert,
-  Clock3,
-  Code2,
-  FileText,
-  Play,
-  RefreshCw,
-  ShieldCheck,
-  Wrench,
-} from "lucide-react";
-import { AIPromptForm } from "@/components/ai/ai-prompt-form";
 import { TaskPoller } from "@/components/ai/task-poller";
 import { RunPoller } from "@/components/run/run-poller";
 import { MobileShell } from "@/components/mobile/mobile-shell";
-import { repairFailedTask, retryFailedTask } from "@/app/actions/ai";
-import { startRunAction } from "@/app/actions/run";
 import { createClient } from "@/lib/supabase/server";
 import { formatRelative } from "@/lib/slug";
-import { cn } from "@/lib/utils";
 import { getRepairDisplayPrompt, getRepairMetadata } from "@/lib/ai/repair";
 import { deriveNextAction } from "@/lib/workspace/next-action";
 import {
@@ -447,22 +429,25 @@ function buildMobileConversation({
         role: "assistant",
         createdAt: entry.createdAt,
         body: runStatusMessage(entry.session),
-        badges: ["Local preview", runStatusLabel(entry.session.status)],
+        badges: ["Preview", runStatusLabel(entry.session.status)],
         status: entry.session.status,
         href: {
-          label: "Inspect run",
-          url: `/projects/${projectId}/run`,
+          label: entry.session.status === "error" ? "Console" : "Preview",
+          url:
+            entry.session.status === "error"
+              ? `/projects/${projectId}/logs`
+              : `/projects/${projectId}/run`,
         },
         facts: [
           {
-            label: "Operation",
+            label: "State",
             value:
-              "Parser validation, temporary workspace assembly, and local Next dev startup when saved files support it.",
+              "UDD checked the saved app and opened preview when supported.",
           },
           ...(highlight
             ? [
                 {
-                  label: "Latest output",
+                  label: "Console",
                   value: highlight.message,
                   tone:
                     highlight.level === "error"
@@ -524,17 +509,20 @@ function buildMobileConversation({
       canRetry:
         (entry.task.status === "failed" || entry.task.status === "cancelled") &&
         !canRepair,
-      href: {
-        label: "Inspect work item",
-        url: `/projects/${projectId}/ai?task=${entry.task.id}`,
-      },
+      href:
+        entry.task.status === "completed"
+          ? {
+              label: "View code",
+              url: `/projects/${projectId}/files`,
+            }
+          : undefined,
       facts: [
         { label: "Operation", value: operation.description },
         ...(repairMetadata
           ? [
               {
                 label: "Repair source",
-                value: `Uses validation evidence from failed work item ${shortTaskId(repairMetadata.source_task_id)}.`,
+                value: `Uses recorded issues from failed run ${shortTaskId(repairMetadata.source_task_id)}.`,
               },
             ]
           : []),
@@ -544,8 +532,8 @@ function buildMobileConversation({
         ...(output && entry.task.status === "completed"
           ? [
               {
-                label: "Saved proof",
-                value: `Saved ${completedFileCount} generated file${completedFileCount === 1 ? "" : "s"} after validation passed. ${output.summary}`,
+                label: "Saved files",
+                value: `Saved ${completedFileCount} file${completedFileCount === 1 ? "" : "s"}. ${output.summary}`,
                 tone: "success" as const,
               },
             ]
@@ -553,15 +541,15 @@ function buildMobileConversation({
         ...(output && entry.task.status === "failed"
           ? [
               {
-                label: "Diagnostic output",
-                value: `${output.files.length} generated file${output.files.length === 1 ? "" : "s"} recorded for diagnostics; this result is not presented as saved.`,
+                label: "Not saved",
+                value: `The draft produced ${output.files.length} file${output.files.length === 1 ? "" : "s"}, but the run failed before updating the project.`,
               },
             ]
           : []),
         ...(validation
           ? [
               {
-                label: "Validation",
+                label: "Check",
                 value: validationFact(validation),
                 tone:
                   validation.blocking_count > 0
@@ -633,78 +621,6 @@ function formatMobileBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function ConversationStream({
-  tasks,
-  promptsById,
-  taskEventsByTaskId,
-  runSessions,
-  runEventsBySessionId,
-  projectId,
-}: {
-  tasks: LatestTask[];
-  promptsById: Map<string, string>;
-  taskEventsByTaskId: Map<string, AITaskEventRow[]>;
-  runSessions: LatestRunSession[];
-  runEventsBySessionId: Map<string, RunEventRow[]>;
-  projectId: string;
-}) {
-  const entries = [
-    ...tasks.map((task) => ({
-      kind: "task" as const,
-      createdAt: task.created_at,
-      task,
-    })),
-    ...runSessions.map((session) => ({
-      kind: "run" as const,
-      createdAt: session.created_at,
-      session,
-    })),
-  ].sort(
-    (left, right) =>
-      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
-  );
-
-  if (entries.length === 0) return null;
-
-  return (
-    <>
-      {entries.map((entry) => {
-        if (entry.kind === "run") {
-          return (
-            <ChatMessage key={entry.session.id} role="assistant">
-              <RunConversationSummary
-                session={entry.session}
-                events={runEventsBySessionId.get(entry.session.id) ?? []}
-                projectId={projectId}
-              />
-            </ChatMessage>
-          );
-        }
-
-        const prompt = promptForTask(entry.task, promptsById);
-        return (
-          <div key={entry.task.id} className="space-y-2">
-            {prompt ? (
-              <ChatMessage role="user">
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {prompt}
-                </p>
-              </ChatMessage>
-            ) : null}
-            <ChatMessage role="assistant">
-              <TaskConversationSummary
-                task={entry.task}
-                events={taskEventsByTaskId.get(entry.task.id) ?? []}
-                projectId={projectId}
-              />
-            </ChatMessage>
-          </div>
-        );
-      })}
-    </>
-  );
-}
-
 type GenerationOperation = {
   badge: string;
   sentenceName: string;
@@ -719,362 +635,66 @@ function generationOperation(
 ): GenerationOperation {
   if (getRepairMetadata(input)) {
     return {
-      badge: "Repair run",
-      sentenceName: "The repair run",
+      badge: "Repair",
+      sentenceName: "Repair",
       description:
-        "Repair · stored validation evidence from a failed work item is used to generate corrected files, then the normal validation and persistence gate decides completion.",
+        "Repair · UDD uses the recorded issues to draft corrected files.",
       runningMessage:
-        "UDD is repairing failed generated output from stored validation evidence. Files are saved only after validation and persistence pass.",
-      contextMessage:
-        "UDD is repairing a failed generation run from stored validation evidence. Files are saved only after validation passes.",
+        "UDD is repairing the draft. Files update only if checks pass.",
+      contextMessage: "UDD is repairing the draft from recorded issues.",
     };
   }
 
   if (kind === "scaffold") {
     return {
-      badge: "Scaffold run",
-      sentenceName: "The scaffold run",
-      description:
-        "Scaffold · generated files replace the saved file set after validation and persistence pass.",
+      badge: "Build",
+      sentenceName: "Build",
+      description: "Build · UDD is creating a fresh app from your prompt.",
       runningMessage:
-        "UDD is scaffolding a replacement file set. Files are saved only after validation and persistence pass.",
-      contextMessage:
-        "UDD is drafting a replacement file set. Saved files change only after validation and persistence pass.",
+        "UDD is building a fresh app. Files update only if checks pass.",
+      contextMessage: "UDD is drafting a fresh app from your prompt.",
     };
   }
 
   if (kind === "refactor") {
     return {
-      badge: "Refactor run",
-      sentenceName: "The refactor run",
-      description:
-        "Refactor · generated files are checked against the existing saved file set and then persisted if validation passes.",
+      badge: "Refactor",
+      sentenceName: "Refactor",
+      description: "Refactor · UDD is reshaping the current app.",
       runningMessage:
-        "UDD is refactoring against the saved file set. Files are saved only after validation and persistence pass.",
-      contextMessage:
-        "UDD is drafting a refactor against saved files. Changes are saved only after validation passes.",
+        "UDD is refactoring the app. Files update only if checks pass.",
+      contextMessage: "UDD is drafting a refactor for the current app.",
     };
   }
 
   if (kind === "explain") {
     return {
-      badge: "Explain run",
-      sentenceName: "The explanation run",
-      description:
-        "Explain · source classified this as an explanation request; any generated files still use the validation gate.",
-      runningMessage:
-        "UDD is processing an explanation request. Any generated files are saved only after validation and persistence pass.",
-      contextMessage:
-        "UDD is processing an explanation request through the same validation-before-save gate.",
+      badge: "Explain",
+      sentenceName: "Explanation",
+      description: "Explain · UDD is answering a question about the app.",
+      runningMessage: "UDD is preparing an explanation.",
+      contextMessage: "UDD is preparing an explanation.",
     };
   }
 
   if (kind === "other") {
     return {
-      badge: "Generation run",
-      sentenceName: "The generation run",
-      description:
-        "Generation · general generated output is checked before anything is saved.",
+      badge: "Build",
+      sentenceName: "Generation",
+      description: "Build · UDD is drafting the requested change.",
       runningMessage:
-        "UDD is generating output. Files are saved only after validation and persistence pass.",
-      contextMessage:
-        "UDD is generating files. They are saved only after validation passes.",
+        "UDD is drafting the change. Files update only if checks pass.",
+      contextMessage: "UDD is drafting the requested change.",
     };
   }
 
   return {
-    badge: "Edit run",
-    sentenceName: "The edit run",
-    description:
-      "Edit · generated files are checked against existing saved files and then persisted if validation passes.",
-    runningMessage:
-      "UDD is drafting changes against the saved file set. Files are saved only after validation and persistence pass.",
-    contextMessage:
-      "UDD is drafting changes against saved files. Changes are saved only after validation passes.",
+    badge: "Edit",
+    sentenceName: "Edit",
+    description: "Edit · UDD is changing the current app.",
+    runningMessage: "UDD is editing the app. Files update only if checks pass.",
+    contextMessage: "UDD is drafting changes for the current app.",
   };
-}
-
-function TaskConversationSummary({
-  task,
-  events,
-  projectId,
-}: {
-  task: LatestTask;
-  events: AITaskEventRow[];
-  projectId: string;
-}) {
-  const output = task.output as AITaskResult | null;
-  const operation = generationOperation(task.kind, task.input);
-  const repairMetadata = getRepairMetadata(task.input);
-  const validationSummary = extractValidationSummary(events);
-  const latestProgress = latestEventByKind(events, "progress");
-  const firstBlockingIssue = events.find(
-    (event) =>
-      event.kind === "validation" && event.payload.severity === "blocking",
-  );
-  const completedEvent = latestEventByKind(events, "completed");
-  const completedFileCount =
-    completedEvent?.payload.file_count ?? output?.files.length ?? 0;
-
-  return (
-    <div className="flex flex-col gap-2 text-sm leading-relaxed">
-      <div className="flex flex-wrap items-center gap-2">
-        <WorkItemStatusBadge status={task.status} />
-        <OperationKindBadge label={operation.badge} />
-        <span className="text-xs text-muted-foreground">
-          {task.finished_at
-            ? `Updated ${formatRelative(task.finished_at)}`
-            : task.started_at
-              ? `Started ${formatRelative(task.started_at)}`
-              : `Queued ${formatRelative(task.created_at)}`}
-        </span>
-      </div>
-
-      <p className="text-foreground">
-        {taskStatusMessage(task, output, operation)}
-      </p>
-
-      <ConversationFact label="Operation">
-        {operation.description}
-      </ConversationFact>
-
-      {repairMetadata ? (
-        <ConversationFact label="Repair source">
-          Uses validation evidence from failed work item{" "}
-          <span className="font-mono text-[11px]">
-            {shortTaskId(repairMetadata.source_task_id)}
-          </span>
-          .
-        </ConversationFact>
-      ) : null}
-
-      {task.status === "running" && latestProgress?.payload.message ? (
-        <ConversationFact label="Progress">
-          {latestProgress.payload.message}
-        </ConversationFact>
-      ) : null}
-
-      {output && task.status === "completed" ? (
-        <ConversationFact label="Saved proof">
-          Saved {completedFileCount} generated file
-          {completedFileCount === 1 ? "" : "s"} after validation passed.{" "}
-          {output.summary}
-        </ConversationFact>
-      ) : null}
-
-      {output && task.status === "failed" ? (
-        <ConversationFact label="Diagnostic output">
-          {output.files.length} generated file
-          {output.files.length === 1 ? "" : "s"} recorded for diagnostics; the
-          task did not complete, so this result is not presented as saved.
-        </ConversationFact>
-      ) : null}
-
-      {validationSummary ? (
-        <ConversationFact label="Validation">
-          {validationSummary.message || "Validation recorded."}
-          {validationSummary.blocking_count ||
-          validationSummary.warning_count ? (
-            <span className="text-muted-foreground">
-              {" "}
-              ({validationSummary.blocking_count} blocking,{" "}
-              {validationSummary.warning_count} warning
-              {validationSummary.warning_count === 1 ? "" : "s"})
-            </span>
-          ) : null}
-        </ConversationFact>
-      ) : null}
-
-      {firstBlockingIssue ? (
-        <ConversationFact label="Blocking issue" tone="destructive">
-          {formatValidationIssue(firstBlockingIssue.payload)}
-        </ConversationFact>
-      ) : null}
-
-      {task.status === "failed" && task.error ? (
-        <ConversationFact label="Failure" tone="destructive">
-          {task.error}
-        </ConversationFact>
-      ) : null}
-
-      {task.status === "failed" || task.status === "cancelled" ? (
-        <ConversationFact label="Recovery">
-          {hasBlockingValidationEvidence(events)
-            ? "Use the recorded validation evidence to queue a repair run, or inspect the work item before deciding."
-            : "Review this generation run before retrying or submitting a revised prompt."}
-        </ConversationFact>
-      ) : null}
-
-      {task.status === "failed" && hasBlockingValidationEvidence(events) ? (
-        <RepairFailedTaskForm
-          taskId={task.id}
-          projectId={projectId}
-          redirectTo={`/projects/${projectId}`}
-        />
-      ) : null}
-
-      <Link
-        href={`/projects/${projectId}/ai?task=${task.id}`}
-        className="w-fit text-xs font-medium text-foreground underline-offset-4 hover:underline"
-      >
-        Inspect work item
-      </Link>
-    </div>
-  );
-}
-
-function RunConversationSummary({
-  session,
-  events,
-  projectId,
-}: {
-  session: LatestRunSession;
-  events: RunEventRow[];
-  projectId: string;
-}) {
-  const highlight = runEventHighlight(session, events);
-
-  return (
-    <div className="flex flex-col gap-2 text-sm leading-relaxed">
-      <div className="flex flex-wrap items-center gap-2">
-        <ValidationCheckStatusBadge status={session.status} />
-        <span className="text-xs text-muted-foreground">
-          {session.stopped_at
-            ? `Updated ${formatRelative(session.stopped_at)}`
-            : session.started_at
-              ? `Started ${formatRelative(session.started_at)}`
-              : `Queued ${formatRelative(session.created_at)}`}
-        </span>
-      </div>
-      <p className="text-foreground">{runStatusMessage(session)}</p>
-      <ConversationFact label="Operation">
-        Local preview run · parser validation, temporary workspace assembly, and
-        local Next dev startup when the saved project shape supports it.
-      </ConversationFact>
-      {highlight ? (
-        <ConversationFact
-          label="Parser output"
-          tone={highlight.level === "error" ? "destructive" : "default"}
-        >
-          {highlight.message}
-        </ConversationFact>
-      ) : null}
-      {session.status === "error" && session.error ? (
-        <ConversationFact label="Failure" tone="destructive">
-          {session.error}
-        </ConversationFact>
-      ) : null}
-      <Link
-        href={`/projects/${projectId}/run`}
-        className="w-fit text-xs font-medium text-foreground underline-offset-4 hover:underline"
-      >
-        Inspect run
-      </Link>
-    </div>
-  );
-}
-
-function ConversationFact({
-  label,
-  tone = "default",
-  children,
-}: {
-  label: string;
-  tone?: "default" | "destructive";
-  children: ReactNode;
-}) {
-  return (
-    <p
-      className={cn(
-        "text-sm text-muted-foreground",
-        tone === "destructive" && "text-destructive",
-      )}
-    >
-      <span className="font-medium text-foreground">{label}:</span> {children}
-    </p>
-  );
-}
-
-function ChatMessage({
-  role,
-  children,
-}: {
-  role: "assistant" | "user";
-  children: ReactNode;
-}) {
-  const isUser = role === "user";
-
-  return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[78%]",
-          isUser
-            ? "rounded-lg rounded-tr-sm bg-primary px-4 py-3 text-primary-foreground"
-            : "py-2 text-foreground",
-        )}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function WorkItemStatusBadge({ status }: { status: LatestTask["status"] }) {
-  const labels: Record<LatestTask["status"], string> = {
-    pending: "queued",
-    running: "generating",
-    completed: "validated and saved",
-    failed: "failed",
-    cancelled: "cancelled",
-  };
-  const tone =
-    status === "completed"
-      ? "text-accent"
-      : status === "failed"
-        ? "text-destructive"
-        : "text-muted-foreground";
-
-  return (
-    <span className={cn("text-xs font-medium capitalize", tone)}>
-      {labels[status]}
-    </span>
-  );
-}
-
-function OperationKindBadge({ label }: { label: string }) {
-  return (
-    <span className="rounded-sm bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
-      {label}
-    </span>
-  );
-}
-
-function ValidationCheckStatusBadge({
-  status,
-}: {
-  status: LatestRunSession["status"];
-}) {
-  const labels: Record<LatestRunSession["status"], string> = {
-    idle: "idle",
-    starting: "starting preview",
-    running: "preview running",
-    stopping: "stopping",
-    stopped: "stopped",
-    error: "run failed",
-  };
-  const tone =
-    status === "running"
-      ? "text-accent"
-      : status === "error"
-        ? "text-destructive"
-        : "text-muted-foreground";
-
-  return (
-    <span className={cn("text-xs font-medium capitalize", tone)}>
-      {labels[status]}
-    </span>
-  );
 }
 
 function taskStatusMessage(
@@ -1083,7 +703,7 @@ function taskStatusMessage(
   operation: GenerationOperation,
 ): string {
   if (task.status === "pending") {
-    return `${operation.sentenceName} queued. No generated output is recorded yet.`;
+    return `${operation.sentenceName} queued.`;
   }
 
   if (task.status === "running") {
@@ -1093,46 +713,46 @@ function taskStatusMessage(
   if (task.status === "completed") {
     const fileCount = output?.files.length ?? 0;
     if (fileCount === 0) {
-      return `${operation.sentenceName} completed after validation and persistence.`;
+      return `${operation.sentenceName} finished.`;
     }
-    return `${operation.sentenceName} completed: validation passed and ${fileCount} generated file${
+    return `${operation.sentenceName} finished: ${fileCount} file${
       fileCount === 1 ? " is" : "s are"
-    } saved.`;
+    } ready.`;
   }
 
   if (task.status === "failed") {
     return output
-      ? `${operation.sentenceName} staged generated output, but failed before completion. Saved files are not represented by this result.`
-      : `${operation.sentenceName} failed before a generated result was recorded.`;
+      ? `${operation.sentenceName} failed before the project was updated.`
+      : `${operation.sentenceName} failed before a draft was recorded.`;
   }
 
-  return `${operation.sentenceName} was cancelled before a completed result was recorded.`;
+  return `${operation.sentenceName} was cancelled.`;
 }
 
 function runStatusMessage(session: LatestRunSession): string {
   if (session.status === "starting") {
-    return "UDD is validating saved files and trying to start a bounded local preview.";
+    return "Preview is starting.";
   }
 
   if (session.status === "running") {
     return session.preview_url
-      ? `A local dev preview is running at ${session.preview_url}. This is not deployment or production hosting.`
-      : "This run is marked active, but no preview URL is recorded. Inspect the run logs.";
+      ? "Preview is running."
+      : "Preview needs attention; no preview URL was recorded.";
   }
 
   if (session.status === "stopping") {
-    return "The local preview process is stopping and its temporary workspace is being cleaned up.";
+    return "Preview is stopping.";
   }
 
   if (session.status === "stopped") {
-    return "The local preview run was stopped and cleaned up.";
+    return "Preview stopped.";
   }
 
   if (session.status === "error") {
-    return "The run ended with a validation, startup, dependency, or runtime error.";
+    return "Preview could not start.";
   }
 
-  return "No local preview run is active.";
+  return "Preview will appear here.";
 }
 
 function promptForTask(
@@ -1250,33 +870,6 @@ function shortTaskId(taskId: string): string {
   return taskId.slice(0, 8);
 }
 
-function RepairFailedTaskForm({
-  taskId,
-  projectId,
-  redirectTo,
-}: {
-  taskId: string;
-  projectId: string;
-  redirectTo?: string;
-}) {
-  return (
-    <form action={repairFailedTask} className="pt-1">
-      <input type="hidden" name="task_id" value={taskId} />
-      <input type="hidden" name="project_id" value={projectId} />
-      {redirectTo ? (
-        <input type="hidden" name="redirect_to" value={redirectTo} />
-      ) : null}
-      <button
-        type="submit"
-        className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-foreground underline-offset-4 hover:underline"
-      >
-        <Wrench className="h-3.5 w-3.5" />
-        Repair with evidence
-      </button>
-    </form>
-  );
-}
-
 function groupTaskEvents(
   events: AITaskEventRow[],
 ): Map<string, AITaskEventRow[]> {
@@ -1297,486 +890,4 @@ function groupRunEvents(events: RunEventRow[]): Map<string, RunEventRow[]> {
     groupedEvents.set(event.session_id, existingEvents);
   }
   return groupedEvents;
-}
-
-function AssistantMessageBubble({
-  action,
-  projectId,
-}: {
-  action: NextAction;
-  projectId: string;
-}) {
-  const isLocalPrompt = action.cta.action === "local_prompt";
-  const isValidationStart = action.cta.action === "start_validation";
-  const isRepairAction = action.cta.action === "repair" && action.cta.taskId;
-  const isRetryAction = action.cta.action === "retry" && action.cta.taskId;
-  const isProviderCredential = action.cta.action === "provider_credential";
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/60 bg-card/45 px-3 py-2 text-sm text-muted-foreground/85">
-      <div className="flex min-w-0 items-center gap-2">
-        <span className="shrink-0 rounded-sm border border-border/60 bg-background/55 px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
-          Next
-        </span>
-        <span className="min-w-0 leading-relaxed" title={action.reason}>
-          {action.description}
-        </span>
-      </div>
-      {isRepairAction ? (
-        <form action={repairFailedTask} className="contents">
-          <input type="hidden" name="task_id" value={action.cta.taskId} />
-          <input type="hidden" name="project_id" value={projectId} />
-          <input
-            type="hidden"
-            name="redirect_to"
-            value={`/projects/${projectId}`}
-          />
-          <button
-            type="submit"
-            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background/80"
-          >
-            {action.cta.label}
-            <Wrench className="h-3 w-3" />
-          </button>
-        </form>
-      ) : isRetryAction ? (
-        <form action={retryFailedTask} className="contents">
-          <input type="hidden" name="task_id" value={action.cta.taskId} />
-          <input type="hidden" name="project_id" value={projectId} />
-          <input
-            type="hidden"
-            name="redirect_to"
-            value={`/projects/${projectId}`}
-          />
-          <button
-            type="submit"
-            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background/80"
-          >
-            {action.cta.label}
-            <RefreshCw className="h-3 w-3" />
-          </button>
-        </form>
-      ) : isValidationStart ? (
-        <form action={startRunAction} className="contents">
-          <input type="hidden" name="project_id" value={projectId} />
-          <button
-            type="submit"
-            className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background/80"
-          >
-            {action.cta.label}
-            <ArrowRight className="h-3 w-3" />
-          </button>
-        </form>
-      ) : isProviderCredential ? (
-        <span className="shrink-0 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground">
-          {action.cta.label}
-        </span>
-      ) : !isLocalPrompt ? (
-        <Link
-          href={action.cta.href}
-          className="inline-flex shrink-0 items-center gap-1 rounded-sm border border-border/70 bg-background/55 px-2 py-1 text-xs font-medium text-foreground transition hover:bg-background/80"
-        >
-          {action.cta.label}
-          <ArrowRight className="h-3 w-3" />
-        </Link>
-      ) : null}
-    </div>
-  );
-}
-
-function CockpitPromptForm({
-  projectId,
-  busy,
-  activeProvider,
-}: {
-  projectId: string;
-  busy?: boolean;
-  activeProvider: ActiveProviderInfo;
-}) {
-  return (
-    <AIPromptForm
-      projectId={projectId}
-      redirectTo={`/projects/${projectId}`}
-      variant="cockpit"
-      busy={busy}
-      activeProvider={activeProvider}
-    />
-  );
-}
-
-function ContextSurface({
-  project,
-  files,
-  filesCount,
-  validationSummary,
-  latestRunSession,
-  latestRunSummary,
-  latestTask,
-}: {
-  project: Project;
-  files: SavedFile[];
-  filesCount: number;
-  validationSummary: ValidationSummary | null;
-  latestRunSession: LatestRunSession | null;
-  latestRunSummary: RuntimeSummary | null;
-  latestTask: LatestTask | null;
-}) {
-  const runActive =
-    latestRunSession?.status === "running" ||
-    latestRunSession?.status === "starting" ||
-    latestRunSession?.status === "stopping";
-
-  if (runActive) {
-    return (
-      <RunStatusView
-        project={project}
-        session={latestRunSession!}
-        summary={latestRunSummary}
-      />
-    );
-  }
-
-  if (latestTask?.status === "pending" || latestTask?.status === "running") {
-    return <WorkingStateView task={latestTask} />;
-  }
-
-  if (validationSummary) {
-    return <ValidationSummaryView summary={validationSummary} />;
-  }
-
-  if (filesCount > 0) {
-    return <FileSummaryView files={files} filesCount={filesCount} />;
-  }
-
-  return <EmptyStateView />;
-}
-
-function RunStatusView({
-  project,
-  session,
-  summary,
-}: {
-  project: Project;
-  session: LatestRunSession;
-  summary: RuntimeSummary | null;
-}) {
-  const isTransitioning =
-    session.status === "starting" || session.status === "stopping";
-  const hasPreview =
-    session.status === "running" && Boolean(session.preview_url);
-  const statusLabel = isTransitioning
-    ? session.status === "stopping"
-      ? "Stopping"
-      : "Starting"
-    : hasPreview
-      ? "Preview live"
-      : "Checked";
-
-  return (
-    <ViewportShell
-      eyebrow="Runtime"
-      title={hasPreview ? "Local preview" : "Runtime check"}
-      meta={
-        <StateMarker
-          label={statusLabel}
-          tone={hasPreview ? "active" : "muted"}
-        />
-      }
-    >
-      {isTransitioning ? (
-        <div className="space-y-4">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {session.status === "stopping"
-              ? "Stopping local preview and cleaning up workspace..."
-              : "Validating saved files and starting local preview..."}
-          </p>
-          <ProofRow icon={<Clock3 className="h-4 w-4" />} label="State">
-            {session.status === "stopping"
-              ? "The local process is being stopped and its temporary workspace is being removed."
-              : "No preview URL is shown until a local process responds."}
-          </ProofRow>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {session.preview_url
-              ? `Local preview for ${project.name} is running. This is not deployment or production hosting.`
-              : `Saved files for ${project.name} passed the latest runtime check.`}
-          </p>
-          {session.preview_url ? (
-            <div className="rounded-md border border-border/70 bg-background/60 px-3 py-2 font-mono text-xs text-foreground shadow-inner">
-              <span className="break-all">{session.preview_url}</span>
-            </div>
-          ) : null}
-          <div className="grid gap-2">
-            <ProofRow
-              icon={<ShieldCheck className="h-4 w-4" />}
-              label="Parser proof"
-            >
-              {summary?.hasCleanValidationEvent
-                ? "Clean validation event recorded for this run."
-                : "Runtime events are the source of parser proof."}
-            </ProofRow>
-            <ProofRow icon={<Play className="h-4 w-4" />} label="Preview proof">
-              {session.preview_url
-                ? "URL was persisted only after local readiness succeeded."
-                : "No live preview endpoint is recorded for this session."}
-            </ProofRow>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Checked {formatRelative(session.started_at)}
-          </p>
-        </div>
-      )}
-    </ViewportShell>
-  );
-}
-
-function ValidationSummaryView({ summary }: { summary: ValidationSummary }) {
-  const blocked = summary.blocking_count > 0;
-
-  return (
-    <ViewportShell
-      eyebrow="Validation"
-      title={blocked ? "Validation blocked" : "Validation proof"}
-      meta={
-        <StateMarker
-          label={blocked ? "Blocked" : "Passed"}
-          tone={blocked ? "destructive" : "active"}
-        />
-      }
-    >
-      <div className="grid grid-cols-3 gap-2">
-        <MetricCell
-          label="Blocking"
-          value={summary.blocking_count}
-          tone={blocked ? "destructive" : "default"}
-        />
-        <MetricCell label="Warnings" value={summary.warning_count} />
-        <MetricCell label="Info" value={summary.info_count} />
-      </div>
-      {summary.message ? (
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {summary.message}
-        </p>
-      ) : null}
-      <ProofRow
-        icon={
-          blocked ? (
-            <CircleAlert className="h-4 w-4" />
-          ) : (
-            <CheckCircle2 className="h-4 w-4" />
-          )
-        }
-        label="Persistence gate"
-        tone={blocked ? "destructive" : "default"}
-      >
-        {blocked
-          ? "Blocking validation evidence is recorded; generated files are not presented as saved proof."
-          : "No blocking validation issues are recorded for the latest generation run."}
-      </ProofRow>
-    </ViewportShell>
-  );
-}
-
-function FileSummaryView({
-  files,
-  filesCount,
-}: {
-  files: SavedFile[];
-  filesCount: number;
-}) {
-  return (
-    <ViewportShell
-      eyebrow="Saved output"
-      title={`${filesCount} saved file${filesCount === 1 ? "" : "s"}`}
-      meta={<StateMarker label="Persisted" tone="active" />}
-    >
-      <div className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-md border border-border/60 bg-background/35">
-        {files.map((file) => (
-          <div key={file.id} className="flex items-start gap-3 px-3 py-3">
-            <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-mono text-xs text-foreground">
-                {file.path}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {file.language ?? "file"} · {formatBytes(file.size_bytes)} ·
-                Updated {formatRelative(file.updated_at)}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-      {filesCount > files.length ? (
-        <p className="text-xs text-muted-foreground">
-          Showing the most recently updated {files.length} saved files.
-        </p>
-      ) : null}
-      <ProofRow icon={<Code2 className="h-4 w-4" />} label="Source of truth">
-        These are persisted project files, not unsaved diagnostic output.
-      </ProofRow>
-    </ViewportShell>
-  );
-}
-
-function WorkingStateView({ task }: { task: LatestTask }) {
-  const operation = generationOperation(task.kind, task.input);
-
-  return (
-    <ViewportShell
-      eyebrow="Generation"
-      title={operation.badge}
-      meta={<StateMarker label="In progress" tone="active" />}
-    >
-      <p className="text-sm leading-relaxed text-muted-foreground">
-        {operation.contextMessage}
-      </p>
-      <ProofRow icon={<Clock3 className="h-4 w-4" />} label="Save boundary">
-        Files are saved only after validation and persistence pass.
-      </ProofRow>
-    </ViewportShell>
-  );
-}
-
-function EmptyStateView() {
-  return (
-    <ViewportShell
-      eyebrow="Ready"
-      title="Generation viewport"
-      meta={<StateMarker label="Idle" tone="muted" />}
-    >
-      <div className="flex min-h-64 flex-col justify-center gap-4 rounded-md border border-dashed border-border/70 bg-background/25 p-5 text-sm">
-        <p className="font-medium text-foreground">No generation runs yet</p>
-        <p className="max-w-sm leading-relaxed text-muted-foreground">
-          When records exist, this viewport shows validation proof, saved
-          output, repair evidence, or local preview state.
-        </p>
-      </div>
-    </ViewportShell>
-  );
-}
-
-function ViewportShell({
-  eyebrow,
-  title,
-  meta,
-  children,
-}: {
-  eyebrow: string;
-  title: string;
-  meta?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <aside className="flex min-h-full flex-col gap-5 overflow-y-auto px-6 py-6">
-      <div className="flex items-start justify-between gap-4 border-b border-border/70 pb-4">
-        <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase text-muted-foreground">
-            {eyebrow}
-          </p>
-          <h2 className="mt-1 truncate text-base font-semibold text-foreground">
-            {title}
-          </h2>
-        </div>
-        {meta}
-      </div>
-      <div className="flex flex-1 flex-col gap-4">{children}</div>
-    </aside>
-  );
-}
-
-function StateMarker({
-  label,
-  tone,
-}: {
-  label: string;
-  tone: "active" | "muted" | "destructive";
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-sm border px-2 py-1 text-xs font-medium",
-        tone === "active" && "border-accent/40 bg-accent/10 text-accent",
-        tone === "muted" &&
-          "border-border/70 bg-background/50 text-muted-foreground",
-        tone === "destructive" &&
-          "border-destructive/40 bg-destructive/10 text-destructive",
-      )}
-    >
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          tone === "active" && "bg-accent",
-          tone === "muted" && "bg-muted-foreground/60",
-          tone === "destructive" && "bg-destructive",
-        )}
-        aria-hidden
-      />
-      {label}
-    </span>
-  );
-}
-
-function ProofRow({
-  icon,
-  label,
-  tone = "default",
-  children,
-}: {
-  icon: ReactNode;
-  label: string;
-  tone?: "default" | "destructive";
-  children: ReactNode;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex gap-3 rounded-md border border-border/60 bg-background/35 p-3 text-sm",
-        tone === "destructive" && "border-destructive/35 bg-destructive/5",
-      )}
-    >
-      <span
-        className={cn(
-          "mt-0.5 text-muted-foreground",
-          tone === "destructive" && "text-destructive",
-        )}
-      >
-        {icon}
-      </span>
-      <p className="min-w-0 leading-relaxed text-muted-foreground">
-        <span className="font-medium text-foreground">{label}:</span> {children}
-      </p>
-    </div>
-  );
-}
-
-function MetricCell({
-  label,
-  value,
-  tone = "default",
-}: {
-  label: string;
-  value: number;
-  tone?: "default" | "destructive";
-}) {
-  return (
-    <div className="rounded-md border border-border/60 bg-background/35 px-3 py-3">
-      <div
-        className={cn(
-          "font-mono text-xl leading-none text-foreground",
-          tone === "destructive" && "text-destructive",
-        )}
-      >
-        {value}
-      </div>
-      <div className="mt-1 text-xs text-muted-foreground">{label}</div>
-    </div>
-  );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

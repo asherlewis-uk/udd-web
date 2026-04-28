@@ -9,9 +9,15 @@ import { RunPoller } from "@/components/run/run-poller";
 import { LogStream } from "@/components/run/log-stream";
 import { PreviewPanel } from "@/components/run/preview-panel";
 import { SessionsHistory } from "@/components/run/sessions-history";
+import { MobilePreviewRouteScreen } from "@/components/mobile/preview-route-screen";
 import { createClient } from "@/lib/supabase/server";
+import { formatRelative } from "@/lib/slug";
 import { reapStaleSessions } from "@/lib/runtime/service";
 import type { RunStatus } from "@/lib/types";
+import type {
+  MobileRunEvent,
+  MobileRunSession,
+} from "@/components/mobile/types";
 
 export default async function RunPage({
   params,
@@ -41,15 +47,22 @@ export default async function RunPage({
   // the list. This keeps the UI honest without requiring a background job.
   await reapStaleSessions(id, user.id);
 
-  const { data: sessionsData } = await supabase
-    .from("run_sessions")
-    .select(
-      "id, status, preview_url, started_at, stopped_at, created_at, error",
-    )
-    .eq("project_id", id)
-    .eq("owner_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(20);
+  const [{ data: sessionsData }, { count: filesCount }] = await Promise.all([
+    supabase
+      .from("run_sessions")
+      .select(
+        "id, status, preview_url, started_at, stopped_at, created_at, error",
+      )
+      .eq("project_id", id)
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    supabase
+      .from("project_files")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", id)
+      .eq("owner_id", user.id),
+  ]);
 
   const sessions = (sessionsData ?? []) as Array<{
     id: string;
@@ -87,54 +100,107 @@ export default async function RunPage({
   const inFlight =
     status === "starting" || status === "running" || status === "stopping";
 
+  const mobileSession = current ? toMobileRunSession(current) : null;
+  const mobileEvents = events.map(toMobileRunEvent);
+
   return (
-    <WorkspaceContainer>
-      <div className="flex items-start justify-between gap-4">
-        <SectionHeading
-          title="Run"
-          description="Validate saved files, start a bounded local preview when the project shape supports it, and watch real output stream in."
-        />
-        <div className="flex items-center gap-3 pt-1">
-          <RunStatusBadge status={status} />
-          <RunControls
-            projectId={id}
-            sessionId={current?.id ?? null}
-            status={status}
-          />
-        </div>
-      </div>
+    <>
+      <MobilePreviewRouteScreen
+        projectId={id}
+        projectName={project.name as string}
+        filesCount={filesCount ?? 0}
+        session={mobileSession}
+        events={mobileEvents}
+      />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div className="lg:col-span-3">
-          <PreviewPanel
-            status={status}
-            projectName={project.name as string}
-            previewUrl={current?.preview_url ?? null}
-            error={current?.error ?? null}
+      <WorkspaceContainer className="hidden md:flex">
+        <div className="flex items-start justify-between gap-4">
+          <SectionHeading
+            title="Run"
+            description="Validate saved files, start a bounded local preview when the project shape supports it, and watch real output stream in."
           />
+          <div className="flex items-center gap-3 pt-1">
+            <RunStatusBadge status={status} />
+            <RunControls
+              projectId={id}
+              sessionId={current?.id ?? null}
+              status={status}
+            />
+          </div>
         </div>
-        <div className="lg:col-span-2">
-          <LogStream
-            events={events}
-            emptyLabel={
-              current
-                ? "Warming up..."
-                : "No run yet. Press Start Preview to validate saved files and try a local preview."
-            }
-          />
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          <div className="lg:col-span-3">
+            <PreviewPanel
+              status={status}
+              projectName={project.name as string}
+              previewUrl={current?.preview_url ?? null}
+              error={current?.error ?? null}
+            />
+          </div>
+          <div className="lg:col-span-2">
+            <LogStream
+              events={events}
+              emptyLabel={
+                current
+                  ? "Warming up..."
+                  : "No run yet. Press Start Preview to validate saved files and try a local preview."
+              }
+            />
+          </div>
         </div>
-      </div>
 
-      {sessions.length > 1 ? (
-        <section className="flex flex-col gap-2">
-          <span className="px-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Recent sessions
-          </span>
-          <SessionsHistory sessions={sessions.slice(1)} />
-        </section>
-      ) : null}
+        {sessions.length > 1 ? (
+          <section className="flex flex-col gap-2">
+            <span className="px-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              Recent sessions
+            </span>
+            <SessionsHistory sessions={sessions.slice(1)} />
+          </section>
+        ) : null}
 
-      <RunPoller active={inFlight} />
-    </WorkspaceContainer>
+        <RunPoller active={inFlight} />
+      </WorkspaceContainer>
+    </>
   );
+}
+
+function toMobileRunSession(session: {
+  id: string;
+  status: RunStatus;
+  preview_url: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  created_at: string;
+  error: string | null;
+}): MobileRunSession {
+  return {
+    id: session.id,
+    status: session.status,
+    previewUrl: session.preview_url,
+    error: session.error,
+    createdLabel: formatRelative(session.created_at),
+    startedLabel: session.started_at
+      ? formatRelative(session.started_at)
+      : null,
+    stoppedLabel: session.stopped_at
+      ? formatRelative(session.stopped_at)
+      : null,
+  };
+}
+
+function toMobileRunEvent(event: {
+  id: string;
+  level: string;
+  source: string;
+  message: string;
+  created_at: string;
+}): MobileRunEvent {
+  return {
+    id: event.id,
+    level: event.level,
+    source: event.source,
+    message: event.message,
+    createdLabel: formatRelative(event.created_at),
+  };
 }

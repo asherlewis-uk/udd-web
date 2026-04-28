@@ -90,6 +90,7 @@ export function MobileShell({
         isOpen={isActionsMenuOpen}
         projectId={project.id}
         runSession={latestRunSession}
+        filesCount={filesCount}
         onClose={() => setIsActionsMenuOpen(false)}
       />
     </div>
