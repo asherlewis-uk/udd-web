@@ -16,7 +16,6 @@ export function MobileShell({
   filesCount,
   latestRunSession,
   runEvents,
-  nextAction,
   activeProvider,
   providerReadiness,
   taskInFlight,
@@ -42,19 +41,17 @@ export function MobileShell({
   }, []);
 
   return (
-    <div className="h-[calc(100dvh-3.5rem)] min-h-0 w-full overflow-hidden bg-background md:h-[calc(100dvh-3.5rem)]">
+    <div className="h-dvh min-h-0 w-full overflow-hidden bg-background md:h-[calc(100dvh-3.5rem)]">
       {currentScreen === "chat" ? (
         <ChatBuildScreen
           project={project}
           conversation={conversation}
-          nextAction={nextAction}
           activeProvider={activeProvider}
           providerReadiness={providerReadiness}
           taskInFlight={taskInFlight}
           onMenuClick={() => setIsDrawerOpen(true)}
           onPreviewClick={navigateToPreview}
           onProjectPillClick={() => setIsDrawerOpen(true)}
-          onSettingsClick={navigateToSettings}
         />
       ) : null}
 

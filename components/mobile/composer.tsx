@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowUp, Loader2, Settings2 } from "lucide-react";
+import { ArrowUp, Loader2, Mic, Plus, Settings2 } from "lucide-react";
 import { createAITask } from "@/app/actions/ai";
 import { classifyPrompt } from "@/lib/ai/classify";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,7 @@ export function Composer({
     error: null,
   });
   const formRef = useRef<HTMLFormElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState("");
   const [queuedPrompt, setQueuedPrompt] = useState<string | null>(null);
 
@@ -101,32 +102,57 @@ export function Composer({
         </div>
       ) : null}
 
-      <div className="flex items-center gap-2 rounded-[1.75rem] border border-border/70 bg-secondary/80 p-1.5 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)] backdrop-blur">
-        <input
-          name="prompt"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder="Ask UDD to build..."
-          autoComplete="off"
-          required
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.focus()}
           disabled={disabled}
-          className="h-11 min-w-0 flex-1 bg-transparent text-base text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-55"
-        />
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border/70 bg-secondary/80 text-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.95)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+          aria-label="Focus prompt input"
+        >
+          <Plus className="h-5 w-5" />
+        </button>
+
+        <div className="relative min-w-0 flex-1 rounded-full border border-border/70 bg-secondary/80 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)] backdrop-blur">
+          <input
+            ref={inputRef}
+            name="prompt"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Ask UDD to build…"
+            autoComplete="off"
+            required
+            disabled={disabled}
+            className="h-12 w-full min-w-0 rounded-full bg-transparent px-4 pr-12 text-base text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-55"
+          />
+
+          {trimmedDraft ? (
+            <button
+              type="submit"
+              disabled={disabled}
+              className={cn(
+                "absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-foreground text-background transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-45",
+                pending && "animate-pulse",
+              )}
+              aria-label="Submit prompt"
+            >
+              {pending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowUp className="h-5 w-5" />
+              )}
+            </button>
+          ) : null}
+        </div>
 
         <button
-          type="submit"
-          disabled={disabled || !trimmedDraft}
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-45",
-            pending && "animate-pulse",
-          )}
-          aria-label="Submit prompt"
+          type="button"
+          onClick={() => inputRef.current?.focus()}
+          disabled={disabled}
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-border/70 bg-secondary/80 text-foreground shadow-[0_18px_60px_-50px_rgba(0,0,0,0.95)] transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-55"
+          aria-label="Focus prompt input"
         >
-          {pending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <ArrowUp className="h-5 w-5" />
-          )}
+          <Mic className="h-5 w-5" />
         </button>
       </div>
 

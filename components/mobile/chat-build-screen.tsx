@@ -3,39 +3,31 @@
 import Link from "next/link";
 import { Menu, Play, RefreshCw, Wrench } from "lucide-react";
 import { repairFailedTask, retryFailedTask } from "@/app/actions/ai";
-import { startRunAction } from "@/app/actions/run";
 import { cn } from "@/lib/utils";
 import { Composer } from "./composer";
 import { ProjectPill } from "./project-pill";
 import type { MobileConversationEntry, MobileProject } from "./types";
 import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form";
-import type {
-  NextAction,
-  ProviderReadiness,
-} from "@/lib/workspace/next-action";
+import type { ProviderReadiness } from "@/lib/workspace/next-action";
 
 export function ChatBuildScreen({
   project,
   conversation,
-  nextAction,
   activeProvider,
   providerReadiness,
   taskInFlight,
   onMenuClick,
   onPreviewClick,
   onProjectPillClick,
-  onSettingsClick,
 }: {
   project: MobileProject;
   conversation: MobileConversationEntry[];
-  nextAction: NextAction;
   activeProvider: ActiveProviderInfo;
   providerReadiness: ProviderReadiness;
   taskInFlight: boolean;
   onMenuClick: () => void;
   onPreviewClick: () => void;
   onProjectPillClick: () => void;
-  onSettingsClick: () => void;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -61,7 +53,7 @@ export function ChatBuildScreen({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2">
         {conversation.length === 0 ? (
-          <EmptyChatState nextAction={nextAction} />
+          <EmptyChatState />
         ) : (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 py-4">
             {conversation.map((entry) => (
@@ -76,13 +68,6 @@ export function ChatBuildScreen({
       </div>
 
       <div className="flex flex-none flex-col gap-3 pb-safe">
-        <div className="mx-auto w-full max-w-3xl px-4">
-          <NextActionLine
-            action={nextAction}
-            projectId={project.id}
-            onSettingsClick={onSettingsClick}
-          />
-        </div>
         <div className="flex justify-center">
           <ProjectPill
             projectTitle={project.name}
@@ -102,17 +87,13 @@ export function ChatBuildScreen({
     </div>
   );
 }
-
-function EmptyChatState({ nextAction }: { nextAction: NextAction }) {
+function EmptyChatState() {
   return (
-    <div className="flex h-full min-h-96 flex-col items-center justify-center gap-5 text-center">
-      <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-secondary">
-        <span className="text-2xl font-bold text-foreground">UDD</span>
-      </div>
-      <div className="max-w-xs space-y-2">
-        <p className="text-sm text-muted-foreground">
-          {nextAction.description}
-        </p>
+    <div className="flex h-full min-h-96 items-center justify-center text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full border border-border/60 bg-secondary/45">
+        <span className="text-lg font-semibold tracking-wide text-muted-foreground">
+          UDD
+        </span>
       </div>
     </div>
   );
@@ -238,105 +219,4 @@ function RepairRetryControls({
   }
 
   return null;
-}
-
-function NextActionLine({
-  action,
-  projectId,
-  onSettingsClick,
-}: {
-  action: NextAction;
-  projectId: string;
-  onSettingsClick: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/80 px-3 py-2 text-xs text-muted-foreground backdrop-blur">
-      <span className="min-w-0 truncate" title={action.reason}>
-        {action.description}
-      </span>
-      <NextActionCta
-        action={action}
-        projectId={projectId}
-        onSettingsClick={onSettingsClick}
-      />
-    </div>
-  );
-}
-
-function NextActionCta({
-  action,
-  projectId,
-  onSettingsClick,
-}: {
-  action: NextAction;
-  projectId: string;
-  onSettingsClick: () => void;
-}) {
-  if (action.cta.action === "local_prompt") return null;
-
-  if (action.cta.action === "start_validation") {
-    return (
-      <form action={startRunAction} className="shrink-0">
-        <input type="hidden" name="project_id" value={projectId} />
-        <button type="submit" className="font-medium text-foreground">
-          {action.cta.label}
-        </button>
-      </form>
-    );
-  }
-
-  if (action.cta.action === "repair" && action.cta.taskId) {
-    return (
-      <form action={repairFailedTask} className="shrink-0">
-        <input type="hidden" name="task_id" value={action.cta.taskId} />
-        <input type="hidden" name="project_id" value={projectId} />
-        <input
-          type="hidden"
-          name="redirect_to"
-          value={`/projects/${projectId}`}
-        />
-        <button type="submit" className="font-medium text-foreground">
-          {action.cta.label}
-        </button>
-      </form>
-    );
-  }
-
-  if (action.cta.action === "retry" && action.cta.taskId) {
-    return (
-      <form action={retryFailedTask} className="shrink-0">
-        <input type="hidden" name="task_id" value={action.cta.taskId} />
-        <input type="hidden" name="project_id" value={projectId} />
-        <input
-          type="hidden"
-          name="redirect_to"
-          value={`/projects/${projectId}`}
-        />
-        <button type="submit" className="font-medium text-foreground">
-          {action.cta.label}
-        </button>
-      </form>
-    );
-  }
-
-  if (action.cta.action === "provider_credential") {
-    return (
-      <button
-        type="button"
-        onClick={onSettingsClick}
-        className="shrink-0 font-medium text-foreground"
-      >
-        Settings
-      </button>
-    );
-  }
-
-  return (
-    <Link
-      href={action.cta.href}
-      className="shrink-0 font-medium text-foreground"
-    >
-      {action.cta.label}
-    </Link>
-  );
 }

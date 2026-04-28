@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Clock, Plus, Search, Settings, User, X } from "lucide-react";
+import { Clock, Plus, Search, Settings, Star, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MobileProfile, MobileProject } from "./types";
 
@@ -32,6 +32,7 @@ export function ProjectDrawer({
         .includes(normalized),
     );
   }, [projects, query]);
+  const favoriteProjects: MobileProject[] = [];
 
   if (!isOpen) return null;
 
@@ -85,27 +86,24 @@ export function ProjectDrawer({
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
-            <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              <span className="text-xs font-medium uppercase tracking-wide">
-                Recent
-              </span>
-            </div>
-            <div className="flex flex-col gap-1">
-              {filteredProjects.map((project) => (
-                <ProjectRow
-                  key={project.id}
-                  project={project}
-                  active={project.id === currentProjectId}
-                  onClose={onClose}
-                />
-              ))}
-              {filteredProjects.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-border/70 px-4 py-8 text-center text-sm text-muted-foreground">
-                  No matching projects.
-                </div>
-              ) : null}
-            </div>
+            <ProjectSection
+              icon={<Star className="h-4 w-4" />}
+              title="Favorites"
+              projects={favoriteProjects}
+              currentProjectId={currentProjectId}
+              emptyLabel="No favorites yet."
+              onClose={onClose}
+            />
+            <ProjectSection
+              icon={<Clock className="h-4 w-4" />}
+              title="Recents"
+              projects={filteredProjects}
+              currentProjectId={currentProjectId}
+              emptyLabel={
+                query.trim() ? "No matching projects." : "No recent projects."
+              }
+              onClose={onClose}
+            />
           </div>
 
           <div className="border-t border-border/70 p-4 pb-safe">
@@ -141,6 +139,47 @@ export function ProjectDrawer({
         </div>
       </aside>
     </>
+  );
+}
+
+function ProjectSection({
+  icon,
+  title,
+  projects,
+  currentProjectId,
+  emptyLabel,
+  onClose,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  projects: MobileProject[];
+  currentProjectId: string;
+  emptyLabel: string;
+  onClose: () => void;
+}) {
+  return (
+    <section className="py-3">
+      <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+        {icon}
+        <h3 className="text-xs font-medium uppercase tracking-wide">{title}</h3>
+      </div>
+      <div className="flex flex-col gap-1">
+        {projects.length > 0 ? (
+          projects.map((project) => (
+            <ProjectRow
+              key={project.id}
+              project={project}
+              active={project.id === currentProjectId}
+              onClose={onClose}
+            />
+          ))
+        ) : (
+          <div className="px-2 py-3 text-sm text-muted-foreground">
+            {emptyLabel}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 

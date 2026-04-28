@@ -1,26 +1,26 @@
-import Link from "next/link"
-import { Wordmark } from "@/components/brand"
-import { UserMenu } from "@/components/app/user-menu"
-import { createClient } from "@/lib/supabase/server"
+import Link from "next/link";
+import { Wordmark } from "@/components/brand";
+import { UserMenu } from "@/components/app/user-menu";
+import { createClient } from "@/lib/supabase/server";
 
 export async function TopNav() {
-  const supabase = await createClient()
+  const supabase = await createClient();
   const {
     data: { user },
-  } = await supabase.auth.getUser()
+  } = await supabase.auth.getUser();
 
-  let displayName: string | null = null
+  let displayName: string | null = null;
   if (user) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("display_name")
       .eq("id", user.id)
-      .maybeSingle()
-    displayName = profile?.display_name ?? null
+      .maybeSingle();
+    displayName = profile?.display_name ?? null;
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/85 px-5 backdrop-blur">
+    <header className="sticky top-0 z-30 hidden h-14 items-center justify-between border-b border-border bg-background/85 px-5 backdrop-blur md:flex">
       <div className="flex items-center gap-6">
         <Link href="/projects" aria-label="UDD projects">
           <Wordmark />
@@ -43,10 +43,13 @@ export async function TopNav() {
       {user ? (
         <UserMenu email={user.email ?? ""} displayName={displayName} />
       ) : (
-        <Link href="/auth/login" className="text-sm text-muted-foreground hover:text-foreground">
+        <Link
+          href="/auth/login"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
           Sign in
         </Link>
       )}
     </header>
-  )
+  );
 }
