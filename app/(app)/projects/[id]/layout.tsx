@@ -1,35 +1,36 @@
-import { notFound } from "next/navigation"
-import { ProjectHeader } from "@/components/workspace/project-header"
-import { createClient } from "@/lib/supabase/server"
-import { touchProjectOpened } from "@/app/actions/projects"
-import type { Project } from "@/lib/types"
+import { notFound } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { touchProjectOpened } from "@/app/actions/projects";
 
 export default async function ProjectLayout({
   children,
   params,
 }: {
-  children: React.ReactNode
-  params: Promise<{ id: string }>
+  children: React.ReactNode;
+  params: Promise<{ id: string }>;
 }) {
-  const { id } = await params
-  const supabase = await createClient()
+  const { id } = await params;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) notFound();
+
   const { data, error } = await supabase
     .from("projects")
-    .select("*")
+    .select("id")
     .eq("id", id)
-    .maybeSingle()
+    .eq("owner_id", user.id)
+    .maybeSingle();
 
-  if (error || !data) notFound()
+  if (error || !data) notFound();
 
   // Fire-and-forget — do not block rendering.
-  touchProjectOpened(id).catch(() => {})
-
-  const project = data as Project
+  touchProjectOpened(id).catch(() => {});
 
   return (
-    <div className="flex flex-1 flex-col">
-      <ProjectHeader project={project} />
-      <div className="flex flex-1 flex-col">{children}</div>
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {children}
     </div>
-  )
+  );
 }

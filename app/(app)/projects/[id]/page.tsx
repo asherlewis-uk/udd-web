@@ -16,6 +16,7 @@ import {
 import { AIPromptForm } from "@/components/ai/ai-prompt-form";
 import { TaskPoller } from "@/components/ai/task-poller";
 import { RunPoller } from "@/components/run/run-poller";
+import { MobileShell } from "@/components/mobile/mobile-shell";
 import { repairFailedTask, retryFailedTask } from "@/app/actions/ai";
 import { startRunAction } from "@/app/actions/run";
 import { createClient } from "@/lib/supabase/server";
@@ -37,6 +38,14 @@ import type {
   AITaskRow,
 } from "@/lib/ai/types";
 import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form";
+import type {
+  MobileConversationEntry,
+  MobileFileSummary,
+  MobileProject,
+  MobileRunEvent,
+  MobileRunSession,
+  MobileTaskSummary,
+} from "@/components/mobile/types";
 import type {
   NextAction,
   ProviderReadiness,
@@ -97,8 +106,15 @@ export default async function WorkspacePage({
     { data: tasksData },
     { count: filesCount, data: filesData },
     { data: runSessionsData },
+    { data: allProjectsData },
+    { data: profileData },
   ] = await Promise.all([
-    supabase.from("projects").select("*").eq("id", id).maybeSingle(),
+    supabase
+      .from("projects")
+      .select("*")
+      .eq("id", id)
+      .eq("owner_id", user.id)
+      .maybeSingle(),
     supabase
       .from("ai_tasks")
       .select(
@@ -124,6 +140,17 @@ export default async function WorkspacePage({
       .eq("owner_id", user.id)
       .order("created_at", { ascending: false })
       .limit(CONVERSATION_RUN_LIMIT),
+    supabase
+      .from("projects")
+      .select("*")
+      .eq("owner_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(30),
+    supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .maybeSingle(),
   ]);
 
   if (!projectData) notFound();
@@ -248,48 +275,362 @@ export default async function WorkspacePage({
     providerReadiness,
   });
 
+  const latestRunEvents = latestRunSession
+    ? (runEventsBySessionId.get(latestRunSession.id) ?? [])
+    : [];
+  const currentTaskEvents = latestTask
+    ? (taskEventsByTaskId.get(latestTask.id) ?? [])
+    : [];
+  const mobileProject = toMobileProject(project, id);
+  const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
+    toMobileProject(item, id),
+  );
+  const mobileFiles = savedFiles.map(toMobileFileSummary);
+  const mobileLatestTask = latestTask
+    ? toMobileTaskSummary(latestTask, currentTaskEvents, id)
+    : null;
+  const mobileLatestRunSession = latestRunSession
+    ? toMobileRunSession(latestRunSession)
+    : null;
+  const mobileRunEvents = latestRunEvents.map(toMobileRunEvent);
+  const mobileConversation = buildMobileConversation({
+    tasks: recentTasks,
+    promptsById,
+    taskEventsByTaskId,
+    runSessions: recentRunSessions,
+    runEventsBySessionId,
+    projectId: id,
+  });
+
   return (
-    <div className="flex h-full flex-1 overflow-hidden bg-background/75">
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 space-y-3 overflow-y-auto scroll-smooth px-6 py-6">
-          <ConversationStream
-            tasks={recentTasks}
-            promptsById={promptsById}
-            taskEventsByTaskId={taskEventsByTaskId}
-            runSessions={recentRunSessions}
-            runEventsBySessionId={runEventsBySessionId}
-            projectId={id}
-          />
-        </div>
-
-        <div className="flex-none border-t border-border/60 bg-background/90 px-6 pb-6 pt-4 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-4xl flex-col gap-2">
-            <AssistantMessageBubble action={nextAction} projectId={id} />
-            <CockpitPromptForm
-              projectId={id}
-              busy={taskInFlight}
-              activeProvider={activeProvider}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="hidden w-[39%] min-w-100 max-w-136 shrink-0 flex-col overflow-hidden border-l border-border/70 bg-card/35 backdrop-blur lg:flex">
-        <ContextSurface
-          project={project}
-          files={savedFiles}
-          filesCount={count}
-          validationSummary={validationSummary}
-          latestRunSession={latestRunSession}
-          latestRunSummary={latestRunSummary}
-          latestTask={latestTask}
-        />
-      </div>
-
+    <>
+      <MobileShell
+        project={mobileProject}
+        projects={mobileProjects}
+        profile={{
+          email: user.email ?? "",
+          displayName: profileData?.display_name ?? null,
+        }}
+        conversation={mobileConversation}
+        files={mobileFiles}
+        filesCount={count}
+        latestTask={mobileLatestTask}
+        latestRunSession={mobileLatestRunSession}
+        latestRunSummary={latestRunSummary}
+        validationSummary={validationSummary}
+        runEvents={mobileRunEvents}
+        nextAction={nextAction}
+        activeProvider={activeProvider}
+        providerReadiness={providerReadiness}
+        taskInFlight={taskInFlight}
+        runInFlight={runInFlight}
+      />
       <TaskPoller active={taskInFlight} />
       <RunPoller active={runInFlight} />
-    </div>
+    </>
   );
+}
+
+function toMobileProject(
+  project: Project,
+  currentProjectId: string,
+): MobileProject {
+  return {
+    id: project.id,
+    name: project.name,
+    slug: project.slug,
+    description: project.description,
+    status: project.status,
+    updatedLabel: `Updated ${formatRelative(project.updated_at)}`,
+    lastOpenedLabel: project.last_opened_at
+      ? `Opened ${formatRelative(project.last_opened_at)}`
+      : null,
+    current: project.id === currentProjectId,
+  };
+}
+
+function toMobileFileSummary(file: SavedFile): MobileFileSummary {
+  return {
+    id: file.id,
+    path: file.path,
+    language: file.language,
+    sizeLabel: formatMobileBytes(file.size_bytes),
+    updatedLabel: formatRelative(file.updated_at),
+  };
+}
+
+function toMobileTaskSummary(
+  task: LatestTask,
+  events: AITaskEventRow[],
+  projectId: string,
+): MobileTaskSummary {
+  const canRepair =
+    task.status === "failed" && hasBlockingValidationEvidence(events);
+  return {
+    id: task.id,
+    title: task.title,
+    kind: getRepairMetadata(task.input) ? "repair" : task.kind,
+    status: task.status,
+    createdLabel: formatRelative(task.created_at),
+    finishedLabel: task.finished_at ? formatRelative(task.finished_at) : null,
+    href: `/projects/${projectId}/ai?task=${task.id}`,
+    canRepair,
+    canRetry:
+      (task.status === "failed" || task.status === "cancelled") && !canRepair,
+  };
+}
+
+function toMobileRunSession(session: LatestRunSession): MobileRunSession {
+  return {
+    id: session.id,
+    status: session.status,
+    previewUrl: session.preview_url ?? null,
+    error: session.error ?? null,
+    createdLabel: formatRelative(session.created_at),
+    startedLabel: session.started_at
+      ? formatRelative(session.started_at)
+      : null,
+    stoppedLabel: session.stopped_at
+      ? formatRelative(session.stopped_at)
+      : null,
+  };
+}
+
+function toMobileRunEvent(event: RunEventRow): MobileRunEvent {
+  return {
+    id: event.id,
+    level: event.level,
+    source: event.source,
+    message: event.message,
+    createdLabel: formatRelative(event.created_at),
+  };
+}
+
+function buildMobileConversation({
+  tasks,
+  promptsById,
+  taskEventsByTaskId,
+  runSessions,
+  runEventsBySessionId,
+  projectId,
+}: {
+  tasks: LatestTask[];
+  promptsById: Map<string, string>;
+  taskEventsByTaskId: Map<string, AITaskEventRow[]>;
+  runSessions: LatestRunSession[];
+  runEventsBySessionId: Map<string, RunEventRow[]>;
+  projectId: string;
+}): MobileConversationEntry[] {
+  const rows: MobileConversationEntry[] = [];
+  const entries = [
+    ...tasks.map((task) => ({
+      kind: "task" as const,
+      createdAt: task.created_at,
+      task,
+    })),
+    ...runSessions.map((session) => ({
+      kind: "run" as const,
+      createdAt: session.created_at,
+      session,
+    })),
+  ].sort(
+    (left, right) =>
+      new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+  );
+
+  for (const entry of entries) {
+    if (entry.kind === "run") {
+      const events = runEventsBySessionId.get(entry.session.id) ?? [];
+      const highlight = runEventHighlight(entry.session, events);
+      rows.push({
+        id: `run-${entry.session.id}`,
+        role: "assistant",
+        createdAt: entry.createdAt,
+        body: runStatusMessage(entry.session),
+        badges: ["Local preview", runStatusLabel(entry.session.status)],
+        status: entry.session.status,
+        href: {
+          label: "Inspect run",
+          url: `/projects/${projectId}/run`,
+        },
+        facts: [
+          {
+            label: "Operation",
+            value:
+              "Parser validation, temporary workspace assembly, and local Next dev startup when saved files support it.",
+          },
+          ...(highlight
+            ? [
+                {
+                  label: "Latest output",
+                  value: highlight.message,
+                  tone:
+                    highlight.level === "error"
+                      ? ("destructive" as const)
+                      : ("default" as const),
+                },
+              ]
+            : []),
+          ...(entry.session.status === "error" && entry.session.error
+            ? [
+                {
+                  label: "Failure",
+                  value: entry.session.error,
+                  tone: "destructive" as const,
+                },
+              ]
+            : []),
+        ],
+      });
+      continue;
+    }
+
+    const taskEvents = taskEventsByTaskId.get(entry.task.id) ?? [];
+    const prompt = promptForTask(entry.task, promptsById);
+    if (prompt) {
+      rows.push({
+        id: `prompt-${entry.task.id}`,
+        role: "user",
+        createdAt: entry.createdAt,
+        body: prompt,
+      });
+    }
+
+    const output = entry.task.output as AITaskResult | null;
+    const operation = generationOperation(entry.task.kind, entry.task.input);
+    const repairMetadata = getRepairMetadata(entry.task.input);
+    const validation = extractValidationSummary(taskEvents);
+    const latestProgress = latestEventByKind(taskEvents, "progress");
+    const firstBlockingIssue = taskEvents.find(
+      (event) =>
+        event.kind === "validation" && event.payload.severity === "blocking",
+    );
+    const completedEvent = latestEventByKind(taskEvents, "completed");
+    const completedFileCount =
+      completedEvent?.payload.file_count ?? output?.files.length ?? 0;
+    const canRepair =
+      entry.task.status === "failed" &&
+      hasBlockingValidationEvidence(taskEvents);
+
+    rows.push({
+      id: `task-${entry.task.id}`,
+      role: "assistant",
+      createdAt: entry.createdAt,
+      body: taskStatusMessage(entry.task, output, operation),
+      badges: [operation.badge, taskStatusLabel(entry.task.status)],
+      status: entry.task.status,
+      taskId: entry.task.id,
+      canRepair,
+      canRetry:
+        (entry.task.status === "failed" || entry.task.status === "cancelled") &&
+        !canRepair,
+      href: {
+        label: "Inspect work item",
+        url: `/projects/${projectId}/ai?task=${entry.task.id}`,
+      },
+      facts: [
+        { label: "Operation", value: operation.description },
+        ...(repairMetadata
+          ? [
+              {
+                label: "Repair source",
+                value: `Uses validation evidence from failed work item ${shortTaskId(repairMetadata.source_task_id)}.`,
+              },
+            ]
+          : []),
+        ...(entry.task.status === "running" && latestProgress?.payload.message
+          ? [{ label: "Progress", value: latestProgress.payload.message }]
+          : []),
+        ...(output && entry.task.status === "completed"
+          ? [
+              {
+                label: "Saved proof",
+                value: `Saved ${completedFileCount} generated file${completedFileCount === 1 ? "" : "s"} after validation passed. ${output.summary}`,
+                tone: "success" as const,
+              },
+            ]
+          : []),
+        ...(output && entry.task.status === "failed"
+          ? [
+              {
+                label: "Diagnostic output",
+                value: `${output.files.length} generated file${output.files.length === 1 ? "" : "s"} recorded for diagnostics; this result is not presented as saved.`,
+              },
+            ]
+          : []),
+        ...(validation
+          ? [
+              {
+                label: "Validation",
+                value: validationFact(validation),
+                tone:
+                  validation.blocking_count > 0
+                    ? ("destructive" as const)
+                    : ("default" as const),
+              },
+            ]
+          : []),
+        ...(firstBlockingIssue
+          ? [
+              {
+                label: "Blocking issue",
+                value: formatValidationIssue(firstBlockingIssue.payload),
+                tone: "destructive" as const,
+              },
+            ]
+          : []),
+        ...(entry.task.status === "failed" && entry.task.error
+          ? [
+              {
+                label: "Failure",
+                value: entry.task.error,
+                tone: "destructive" as const,
+              },
+            ]
+          : []),
+      ],
+    });
+  }
+
+  return rows;
+}
+
+function validationFact(summary: ValidationSummary): string {
+  const counts = [
+    `${summary.blocking_count} blocking`,
+    `${summary.warning_count} warning${summary.warning_count === 1 ? "" : "s"}`,
+    `${summary.info_count} info`,
+  ].join(", ");
+  return summary.message ? `${summary.message} (${counts})` : counts;
+}
+
+function taskStatusLabel(status: LatestTask["status"]): string {
+  const labels: Record<LatestTask["status"], string> = {
+    pending: "queued",
+    running: "generating",
+    completed: "validated and saved",
+    failed: "failed",
+    cancelled: "cancelled",
+  };
+  return labels[status];
+}
+
+function runStatusLabel(status: LatestRunSession["status"]): string {
+  const labels: Record<LatestRunSession["status"], string> = {
+    idle: "idle",
+    starting: "starting",
+    running: "running",
+    stopping: "stopping",
+    stopped: "stopped",
+    error: "failed",
+  };
+  return labels[status];
+}
+
+function formatMobileBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function ConversationStream({
