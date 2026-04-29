@@ -50,17 +50,15 @@ export default async function SettingsPage() {
     : null;
   const provider = getProvider(currentProviderId);
   const environmentCredentialAvailable = hasGatewayEnvironmentCredential();
-  const hasSavedCredential = credentialStatuses[provider.id] ?? false;
 
   return (
     <>
       <MobileAccountSettingsScreen
         email={user.email ?? ""}
         displayName={profile?.display_name ?? null}
-        providerLabel={provider.label}
-        providerModel={provider.modelDisplayName}
-        providerReady={hasSavedCredential || environmentCredentialAvailable}
-        hasSavedCredential={hasSavedCredential}
+        currentProviderId={provider.id}
+        savedProviderId={currentProviderId}
+        credentialStatuses={credentialStatuses}
         environmentCredentialAvailable={environmentCredentialAvailable}
       />
 

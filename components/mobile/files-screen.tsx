@@ -32,7 +32,7 @@ export function MobileFilesScreen({
               No files yet
             </h2>
             <p className="text-sm text-muted-foreground">
-              Generate or repair a project to create saved files.
+              Generate or repair this project to create files.
             </p>
           </div>
         </div>

@@ -107,7 +107,7 @@ export function MobileProjectSettingsScreen({ project }: { project: Project }) {
         </button>
       </form>
 
-      <MobileSettingsGroup title="Project behavior">
+      <MobileSettingsGroup title="Project state">
         <div className="flex items-center justify-between gap-3 px-4 py-4">
           <div className="min-w-0">
             <div className="text-base font-medium text-foreground">Status</div>
@@ -115,19 +115,40 @@ export function MobileProjectSettingsScreen({ project }: { project: Project }) {
               {project.status}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={handleArchiveToggle}
-            disabled={pending}
-            className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border/70 px-3 py-2 text-sm text-foreground transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {archived ? (
-              <ArchiveRestore className="h-4 w-4" />
-            ) : (
-              <Archive className="h-4 w-4" />
-            )}
-            {archived ? "Restore" : "Archive"}
-          </button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                disabled={pending}
+                className="inline-flex shrink-0 items-center gap-2 rounded-full border border-border/70 px-3 py-2 text-sm text-foreground transition active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {archived ? (
+                  <ArchiveRestore className="h-4 w-4" />
+                ) : (
+                  <Archive className="h-4 w-4" />
+                )}
+                {archived ? "Restore" : "Archive"}
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {archived ? "Restore project?" : "Archive project?"}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {archived
+                    ? "This returns the project to your active workspace list."
+                    : "This hides the project from your active workspace list without deleting it."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={handleArchiveToggle}>
+                  {archived ? "Restore" : "Archive"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
         <div className="mx-4 h-px bg-border/60" />
         <Link
@@ -136,17 +157,17 @@ export function MobileProjectSettingsScreen({ project }: { project: Project }) {
         >
           <span className="min-w-0">
             <span className="block text-base font-medium text-foreground">
-              Integrations
+              Provider settings
             </span>
             <span className="block truncate text-sm text-muted-foreground">
-              Provider and account settings
+              Default model and credentials
             </span>
           </span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
         </Link>
       </MobileSettingsGroup>
 
-      <MobileSettingsGroup title="Danger zone" destructive>
+      <MobileSettingsGroup title="Danger" destructive>
         <div className="flex items-center justify-between gap-3 px-4 py-4">
           <div className="min-w-0">
             <div className="text-base font-medium text-foreground">
@@ -216,7 +237,7 @@ function MobileSettingsGroup({
       >
         {title}
       </h2>
-      <div className="overflow-hidden rounded-3xl bg-secondary/70">
+      <div className="overflow-hidden rounded-3xl border border-border/50 bg-secondary/55">
         {children}
       </div>
     </section>

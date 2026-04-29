@@ -38,12 +38,14 @@ export function SettingsScreen({
           <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Account
           </h2>
-          <div className="rounded-2xl bg-secondary/80">
+          <div className="overflow-hidden rounded-3xl border border-border/50 bg-secondary/55">
             <SettingsLink
               href="/settings"
               icon={<User className="h-5 w-5" />}
               label={profile.displayName || profile.email}
-              detail={profile.displayName ? profile.email : "Profile settings"}
+              detail={
+                profile.displayName ? profile.email : "Profile and sign out"
+              }
             />
           </div>
         </section>
@@ -52,22 +54,29 @@ export function SettingsScreen({
           <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Provider
           </h2>
-          <div className="rounded-2xl bg-secondary/80">
+          <div className="overflow-hidden rounded-3xl border border-border/50 bg-secondary/55">
             <SettingsLink
               href="/settings"
               icon={<KeyRound className="h-5 w-5" />}
-              label={activeProvider.label}
-              detail={`${activeProvider.model} - ${providerReadiness.ready ? "ready" : "credential needed"}`}
+              label="Provider settings"
+              detail={`${activeProvider.label} · ${activeProvider.model}`}
             />
             <div className="mx-4 h-px bg-border/70" />
-            <div className="px-4 py-3 text-xs text-muted-foreground">
-              Saved credential:{" "}
-              {providerReadiness.hasSavedCredential ? "present" : "not present"}
-              . Environment fallback:{" "}
-              {providerReadiness.hasEnvironmentCredential
-                ? "available"
-                : "not detected"}
-              .
+            <div className="grid grid-cols-2 gap-2 px-4 py-4 text-xs">
+              <StatusTile
+                label="Saved key"
+                value={
+                  providerReadiness.hasSavedCredential ? "Present" : "Not saved"
+                }
+              />
+              <StatusTile
+                label="Environment"
+                value={
+                  providerReadiness.hasEnvironmentCredential
+                    ? "Available"
+                    : "Not detected"
+                }
+              />
             </div>
           </div>
         </section>
@@ -76,12 +85,12 @@ export function SettingsScreen({
           <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Project
           </h2>
-          <div className="rounded-2xl bg-secondary/80">
+          <div className="overflow-hidden rounded-3xl border border-border/50 bg-secondary/55">
             <SettingsLink
               href={`/projects/${project.id}/settings`}
               icon={<Settings2 className="h-5 w-5" />}
               label={project.name}
-              detail="Project metadata and danger zone"
+              detail="Project details and controls"
             />
           </div>
         </section>
@@ -122,5 +131,18 @@ function SettingsLink({
         </span>
       </span>
     </Link>
+  );
+}
+
+function StatusTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border/50 bg-background/45 px-3 py-3">
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-1 truncate text-sm font-medium text-foreground">
+        {value}
+      </div>
+    </div>
   );
 }

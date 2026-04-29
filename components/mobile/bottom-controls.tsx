@@ -61,6 +61,6 @@ function innerClass(active: boolean): string {
     "flex h-9 w-9 items-center justify-center rounded-full transition active:scale-95",
     active
       ? "bg-foreground text-background"
-      : "text-secondary-foreground hover:bg-accent",
+      : "text-secondary-foreground hover:bg-background/45",
   );
 }

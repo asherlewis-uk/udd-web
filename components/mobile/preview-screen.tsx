@@ -1,8 +1,15 @@
 "use client";
 
-import { CircleAlert, ExternalLink, Loader2, Play, Square } from "lucide-react";
+import {
+  CircleAlert,
+  ExternalLink,
+  Loader2,
+  MessageSquare,
+  MoreHorizontal,
+  Play,
+  Square,
+} from "lucide-react";
 import { startRunAction } from "@/app/actions/run";
-import { BottomControls } from "./bottom-controls";
 import type { MobileRunEvent, MobileRunSession } from "./types";
 
 export function PreviewScreen({
@@ -28,21 +35,31 @@ export function PreviewScreen({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="flex items-center justify-between px-4 pt-4">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 pt-4">
         <button
           type="button"
           onClick={onBackToChat}
-          className="flex h-11 items-center gap-2 rounded-full px-2 text-sm text-foreground transition active:scale-95"
+          className="flex h-11 w-11 items-center justify-center rounded-full text-foreground transition active:scale-95"
+          aria-label="Back to chat"
         >
-          Chat
+          <MessageSquare className="h-5 w-5" />
         </button>
         <div className="min-w-0 text-center">
           <div className="truncate text-sm font-medium text-foreground">
             {projectName}
           </div>
-          <div className="text-xs text-muted-foreground">Preview</div>
+          <div className="text-xs capitalize text-muted-foreground">
+            {status === "idle" ? "Preview" : status}
+          </div>
         </div>
-        <div className="h-11 w-11" aria-hidden />
+        <button
+          type="button"
+          onClick={onActionsClick}
+          className="flex h-11 w-11 items-center justify-center rounded-full text-foreground transition active:scale-95"
+          aria-label="Project actions"
+        >
+          <MoreHorizontal className="h-6 w-6" />
+        </button>
       </div>
 
       <div className="min-h-0 flex-1 px-4 py-4">
@@ -76,7 +93,6 @@ export function PreviewScreen({
             status={status}
             filesCount={filesCount}
             error={session?.error ?? null}
-            onBackToChat={onBackToChat}
           />
         )}
       </div>
@@ -92,14 +108,7 @@ export function PreviewScreen({
         </div>
       ) : null}
 
-      <div className="pb-safe">
-        <BottomControls
-          activeMode="preview"
-          onChatClick={onBackToChat}
-          onPreviewClick={() => {}}
-          onActionsClick={onActionsClick}
-        />
-      </div>
+      <div className="pb-safe" />
     </div>
   );
 }
@@ -109,13 +118,11 @@ function PreviewState({
   status,
   filesCount,
   error,
-  onBackToChat,
 }: {
   projectId: string;
   status: MobileRunSession["status"] | "idle";
   filesCount: number;
   error: string | null;
-  onBackToChat: () => void;
 }) {
   const canStart =
     filesCount > 0 &&
@@ -127,7 +134,7 @@ function PreviewState({
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
         {status === "starting" || status === "stopping" ? (
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        ) : status === "error" || (status === "running" && !error) ? (
+        ) : status === "error" || status === "running" ? (
           <CircleAlert className="h-8 w-8 text-destructive" />
         ) : status === "stopped" ? (
           <Square className="h-8 w-8 text-muted-foreground" />
@@ -155,15 +162,6 @@ function PreviewState({
             </button>
           </form>
         ) : null}
-        {filesCount === 0 ? (
-          <button
-            type="button"
-            onClick={onBackToChat}
-            className="rounded-full border border-border/70 px-5 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
-          >
-            Back to chat
-          </button>
-        ) : null}
       </div>
     </div>
   );
@@ -177,14 +175,14 @@ function previewCopy(
   if (status === "starting") {
     return {
       title: "Starting preview",
-      body: "UDD is checking the saved files and opening a preview when this project supports it.",
+      body: "Preparing preview from saved files.",
     };
   }
 
   if (status === "running") {
     return {
       title: "Preview unavailable",
-      body: "This run is active, but no preview URL was recorded. Open Console for details.",
+      body: "No preview URL was recorded. Console has details.",
     };
   }
 
@@ -198,28 +196,26 @@ function previewCopy(
   if (status === "stopped") {
     return {
       title: "Preview stopped",
-      body: "Start again when you want to check the current app.",
+      body: "Start again when files are ready.",
     };
   }
 
   if (status === "error") {
     return {
       title: "Preview blocked",
-      body:
-        error ??
-        "Preview could not start. Open Console for details, then go back to chat or code.",
+      body: error ?? "Preview could not start. Console has details.",
     };
   }
 
   if (filesCount === 0) {
     return {
       title: "Preview will appear here",
-      body: "Go back to chat to generate your app.",
+      body: "Start preview when files are ready.",
     };
   }
 
   return {
     title: "Preview will appear here",
-    body: "Start preview to check the current app.",
+    body: "Start preview to check this project.",
   };
 }

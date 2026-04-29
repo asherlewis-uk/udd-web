@@ -29,7 +29,7 @@ export function MobileLogsScreen({ events }: { events: MobileConsoleEvent[] }) {
               No console output yet
             </h2>
             <p className="text-sm text-muted-foreground">
-              Start preview to see runtime output.
+              Start preview to see output.
             </p>
           </div>
         </div>
