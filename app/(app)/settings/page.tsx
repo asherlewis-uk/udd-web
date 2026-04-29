@@ -43,12 +43,10 @@ export default async function SettingsPage() {
     getProviderCredentialStatusesForOwner(user.id),
   ]);
 
-  const currentProviderId: ProviderId | null = isProviderId(
-    defaultProvider?.name,
-  )
+  const savedProviderId: ProviderId | null = isProviderId(defaultProvider?.name)
     ? defaultProvider.name
     : null;
-  const provider = getProvider(currentProviderId);
+  const provider = getProvider(savedProviderId);
   const environmentCredentialAvailable = hasGatewayEnvironmentCredential();
 
   return (
@@ -57,7 +55,7 @@ export default async function SettingsPage() {
         email={user.email ?? ""}
         displayName={profile?.display_name ?? null}
         currentProviderId={provider.id}
-        savedProviderId={currentProviderId}
+        savedProviderId={savedProviderId}
         credentialStatuses={credentialStatuses}
         environmentCredentialAvailable={environmentCredentialAvailable}
       />
@@ -84,7 +82,7 @@ export default async function SettingsPage() {
           <h2 className="text-sm font-semibold">Provider selection</h2>
           <div className="rounded-lg border border-border/70 bg-card/80 p-6 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
             <ProviderForm
-              currentProviderId={currentProviderId}
+              currentProviderId={savedProviderId}
               credentialStatuses={credentialStatuses}
               environmentCredentialAvailable={environmentCredentialAvailable}
             />

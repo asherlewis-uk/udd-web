@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Clock, Plus, Search, Settings, Star, User } from "lucide-react";
+import { Plus, Search, Settings, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MobileProfile, MobileProject } from "./types";
 
@@ -24,8 +24,6 @@ export function MobileProjectsListScreen({
         .includes(normalized),
     );
   }, [projects, query]);
-
-  const favoriteProjects: MobileProject[] = [];
 
   return (
     <main className="flex min-h-dvh flex-col bg-background text-foreground">
@@ -54,16 +52,10 @@ export function MobileProjectsListScreen({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-5">
         <ProjectSection
-          icon={<Star className="h-4 w-4" />}
-          title="Favorites"
-          projects={favoriteProjects}
-          emptyLabel="No favorites yet."
-        />
-        <ProjectSection
-          icon={<Clock className="h-4 w-4" />}
-          title="Recents"
           projects={filteredProjects}
-          emptyLabel={query.trim() ? "No matching projects." : "No recent projects."}
+          emptyLabel={
+            query.trim() ? "No matching projects." : "No recent projects."
+          }
         />
       </div>
 
@@ -98,22 +90,14 @@ export function MobileProjectsListScreen({
 }
 
 function ProjectSection({
-  icon,
-  title,
   projects,
   emptyLabel,
 }: {
-  icon: React.ReactNode;
-  title: string;
   projects: MobileProject[];
   emptyLabel: string;
 }) {
   return (
     <section className="py-3">
-      <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <h2 className="text-xs font-medium uppercase tracking-wide">{title}</h2>
-      </div>
       <div className="flex flex-col gap-1">
         {projects.length > 0 ? (
           projects.map((project) => (

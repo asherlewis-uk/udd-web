@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   Code,
   ExternalLink,
+  History,
   KeyRound,
   Loader2,
   MessageSquare,
@@ -106,6 +107,13 @@ export function ProjectActionsMenu({
             label="Preview"
             onClose={onClose}
           />
+          <ActionLink
+            href={`/projects/${projectId}/ai`}
+            icon={<History className="h-5 w-5" />}
+            label="Generation history"
+            detail="AI tasks for this project"
+            onClose={onClose}
+          />
           {canOpenPreview ? (
             <a
               href={previewUrl ?? undefined}
@@ -140,7 +148,7 @@ export function ProjectActionsMenu({
             href="/settings"
             icon={<KeyRound className="h-5 w-5" />}
             label="Provider settings"
-            detail="Model and credentials"
+            detail="Default model"
             onClose={onClose}
           />
         </ActionGroup>

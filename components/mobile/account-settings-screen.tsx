@@ -1,20 +1,21 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { CheckCircle2, KeyRound, LogOut, User } from "lucide-react";
-import { ProviderCredentialControl } from "@/components/ai/provider-credential-control";
-import { saveAIProviderConfig } from "@/app/actions/provider-configs";
 import { updateDisplayName } from "@/app/actions/profile";
+import { saveAIProviderConfig } from "@/app/actions/provider-configs";
 import {
   getProviderOptions,
   PROVIDERS,
   type ProviderId,
 } from "@/lib/ai/providers";
 import { cn } from "@/lib/utils";
-import type { ProviderCredentialStatuses } from "@/components/ai/ai-prompt-form";
 
 const PROVIDER_OPTIONS = getProviderOptions();
+
+export type MobileAccountProviderStatuses = Record<ProviderId, boolean>;
 
 export function MobileAccountSettingsScreen({
   email,
@@ -28,43 +29,56 @@ export function MobileAccountSettingsScreen({
   displayName: string | null;
   currentProviderId: ProviderId;
   savedProviderId: ProviderId | null;
-  credentialStatuses: ProviderCredentialStatuses;
+  credentialStatuses: MobileAccountProviderStatuses;
   environmentCredentialAvailable: boolean;
 }) {
   const [pending, startTransition] = useTransition();
-  const [name, setName] = useState(displayName ?? "");
-  const [savedName, setSavedName] = useState(displayName ?? "");
+
+  const initialName = displayName ?? "";
+  const [name, setName] = useState(initialName);
+  const [savedName, setSavedName] = useState(initialName);
+
   const [selectedProvider, setSelectedProvider] =
     useState<ProviderId>(currentProviderId);
   const [savedProvider, setSavedProvider] = useState<ProviderId | null>(
     savedProviderId,
   );
-  const [statuses, setStatuses] =
-    useState<ProviderCredentialStatuses>(credentialStatuses);
 
   useEffect(() => {
-    setStatuses(credentialStatuses);
-  }, [credentialStatuses]);
+    setName(initialName);
+    setSavedName(initialName);
+  }, [initialName]);
 
-  const selectedConfig = PROVIDERS[selectedProvider];
-  const selectedHasCredential = statuses[selectedProvider] ?? false;
-  const providerReady = selectedHasCredential || environmentCredentialAvailable;
-  const nameDirty = name.trim() !== savedName;
+  useEffect(() => {
+    setSelectedProvider(currentProviderId);
+    setSavedProvider(savedProviderId);
+  }, [currentProviderId, savedProviderId]);
+
+  const trimmedName = name.trim();
+  const nameDirty = trimmedName !== savedName.trim();
   const providerDirty = selectedProvider !== savedProvider;
 
+  const selectedConfig = PROVIDERS[selectedProvider];
+  const selectedHasCredential = credentialStatuses[selectedProvider] ?? false;
+  const providerReady = selectedHasCredential || environmentCredentialAvailable;
+
   function saveProfile() {
+    if (!nameDirty) return;
     startTransition(async () => {
       try {
-        await updateDisplayName(name);
-        setSavedName(name.trim());
+        await updateDisplayName(trimmedName);
+        setSavedName(trimmedName);
         toast.success("Profile saved");
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to save");
+        toast.error(
+          error instanceof Error ? error.message : "Failed to save profile",
+        );
       }
     });
   }
 
   function saveProvider() {
+    if (!providerDirty) return;
     startTransition(async () => {
       try {
         await saveAIProviderConfig({
@@ -74,7 +88,9 @@ export function MobileAccountSettingsScreen({
         setSavedProvider(selectedProvider);
         toast.success("Provider saved");
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Failed to save");
+        toast.error(
+          error instanceof Error ? error.message : "Failed to save provider",
+        );
       }
     });
   }
@@ -109,7 +125,9 @@ export function MobileAccountSettingsScreen({
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="How you want to be named"
-              className="h-11 rounded-2xl border border-border/60 bg-background/70 px-3 text-base text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
+              autoComplete="name"
+              disabled={pending}
+              className="h-11 rounded-2xl border border-border/60 bg-background/70 px-3 text-base text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring disabled:opacity-60"
             />
           </label>
           <div className="px-4 pb-4">
@@ -119,7 +137,7 @@ export function MobileAccountSettingsScreen({
               disabled={pending || !nameDirty}
               className="w-full rounded-full border border-border/70 bg-background/70 px-5 py-3 text-sm font-medium text-foreground transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {pending ? "Saving..." : "Save profile"}
+              {pending && nameDirty ? "Saving..." : "Save profile"}
             </button>
           </div>
         </SettingsGroup>
@@ -148,7 +166,7 @@ export function MobileAccountSettingsScreen({
                   setSelectedProvider(event.target.value as ProviderId)
                 }
                 disabled={pending}
-                className="h-11 rounded-2xl border border-border/60 bg-background/70 px-3 text-base text-foreground outline-none focus:ring-2 focus:ring-ring"
+                className="h-11 rounded-2xl border border-border/60 bg-background/70 px-3 text-base text-foreground outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
               >
                 {PROVIDER_OPTIONS.map((provider) => (
                   <option key={provider.id} value={provider.id}>
@@ -180,18 +198,29 @@ export function MobileAccountSettingsScreen({
               disabled={pending || !providerDirty}
               className="w-full rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {pending ? "Saving..." : "Save provider"}
+              {pending && providerDirty ? "Saving..." : "Save provider"}
             </button>
           </div>
         </SettingsGroup>
 
         <SettingsGroup title="Credentials">
-          {PROVIDER_OPTIONS.map((provider) => {
-            const config = PROVIDERS[provider.id];
-            const hasCredential = statuses[provider.id] ?? false;
-            return (
-              <div key={provider.id} className="px-4 py-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="px-4 pt-4 text-sm text-muted-foreground">
+            Save and replace provider keys from the desktop app. Keys are
+            validated, encrypted, and never returned to the browser.
+          </p>
+          <div className="flex flex-col px-4 pb-4 pt-2">
+            {PROVIDER_OPTIONS.map((provider, index) => {
+              const config = PROVIDERS[provider.id];
+              const hasCredential = credentialStatuses[provider.id] ?? false;
+              const isLast = index === PROVIDER_OPTIONS.length - 1;
+              return (
+                <div
+                  key={provider.id}
+                  className={cn(
+                    "flex items-center justify-between gap-3 py-3",
+                    !isLast && "border-b border-border/60",
+                  )}
+                >
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-foreground">
                       {config.label}
@@ -211,25 +240,9 @@ export function MobileAccountSettingsScreen({
                     {hasCredential ? "Saved" : "Missing"}
                   </span>
                 </div>
-                <ProviderCredentialControl
-                  providerId={provider.id}
-                  providerLabel={config.label}
-                  hasCredential={hasCredential}
-                  disabled={pending}
-                  onStatusChange={(providerId, nextStatus) => {
-                    setStatuses((current) => ({
-                      ...current,
-                      [providerId]: nextStatus,
-                    }));
-                  }}
-                />
-                {provider.id !==
-                PROVIDER_OPTIONS[PROVIDER_OPTIONS.length - 1].id ? (
-                  <div className="mt-4 h-px bg-border/60" />
-                ) : null}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </SettingsGroup>
       </div>
 

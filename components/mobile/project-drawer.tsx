@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Clock, Plus, Search, Settings, Star, User, X } from "lucide-react";
+import { Plus, Search, Settings, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MobileProfile, MobileProject } from "./types";
 
@@ -32,7 +32,6 @@ export function ProjectDrawer({
         .includes(normalized),
     );
   }, [projects, query]);
-  const favoriteProjects: MobileProject[] = [];
 
   if (!isOpen) return null;
 
@@ -87,16 +86,6 @@ export function ProjectDrawer({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
             <ProjectSection
-              icon={<Star className="h-4 w-4" />}
-              title="Favorites"
-              projects={favoriteProjects}
-              currentProjectId={currentProjectId}
-              emptyLabel="No favorites yet."
-              onClose={onClose}
-            />
-            <ProjectSection
-              icon={<Clock className="h-4 w-4" />}
-              title="Recents"
               projects={filteredProjects}
               currentProjectId={currentProjectId}
               emptyLabel={
@@ -143,15 +132,11 @@ export function ProjectDrawer({
 }
 
 function ProjectSection({
-  icon,
-  title,
   projects,
   currentProjectId,
   emptyLabel,
   onClose,
 }: {
-  icon: React.ReactNode;
-  title: string;
   projects: MobileProject[];
   currentProjectId: string;
   emptyLabel: string;
@@ -159,10 +144,6 @@ function ProjectSection({
 }) {
   return (
     <section className="py-3">
-      <div className="mb-2 flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <h3 className="text-xs font-medium uppercase tracking-wide">{title}</h3>
-      </div>
       <div className="flex flex-col gap-1">
         {projects.length > 0 ? (
           projects.map((project) => (

@@ -160,7 +160,7 @@ export function MobileProjectSettingsScreen({ project }: { project: Project }) {
               Provider settings
             </span>
             <span className="block truncate text-sm text-muted-foreground">
-              Default model and credentials
+              Default model
             </span>
           </span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
