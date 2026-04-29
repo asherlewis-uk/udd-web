@@ -202,7 +202,12 @@ export function MobileProjectSettingsScreen({ project }: { project: Project }) {
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   onClick={() =>
                     startTransition(async () => {
-                      await deleteProject(project.id);
+                      try {
+                        await deleteProject(project.id);
+                        toast.success("Project deleted");
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Failed");
+                      }
                     })
                   }
                 >

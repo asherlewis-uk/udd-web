@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
 import { CheckCircle2, KeyRound, LogOut, Trash2, User } from "lucide-react";
 import { updateDisplayName } from "@/app/actions/profile";
 import { saveAIProviderConfig } from "@/app/actions/provider-configs";
+import { ProviderCredentialControl } from "@/components/ai/provider-credential-control";
 import {
   getProviderOptions,
   PROVIDERS,
@@ -43,6 +43,7 @@ export function MobileAccountSettingsScreen({
   const [savedProvider, setSavedProvider] = useState<ProviderId | null>(
     savedProviderId,
   );
+  const [credentialState, setCredentialState] = useState(credentialStatuses);
 
   useEffect(() => {
     setName(initialName);
@@ -54,12 +55,16 @@ export function MobileAccountSettingsScreen({
     setSavedProvider(savedProviderId);
   }, [currentProviderId, savedProviderId]);
 
+  useEffect(() => {
+    setCredentialState(credentialStatuses);
+  }, [credentialStatuses]);
+
   const trimmedName = name.trim();
   const nameDirty = trimmedName !== savedName.trim();
   const providerDirty = selectedProvider !== savedProvider;
 
   const selectedConfig = PROVIDERS[selectedProvider];
-  const selectedHasCredential = credentialStatuses[selectedProvider] ?? false;
+  const selectedHasCredential = credentialState[selectedProvider] ?? false;
   const providerReady = selectedHasCredential || environmentCredentialAvailable;
 
   function saveProfile() {
@@ -205,40 +210,65 @@ export function MobileAccountSettingsScreen({
 
         <SettingsGroup title="Credentials">
           <p className="px-4 pt-4 text-sm text-muted-foreground">
-            Save and replace provider keys from the desktop app. Keys are
-            validated, encrypted, and never returned to the browser.
+            Save, replace, or delete provider keys here. Keys are validated,
+            encrypted, and never shown again after save.
           </p>
+          <div className="px-4 pt-3">
+            <StatusTile
+              label="Environment fallback"
+              value={
+                environmentCredentialAvailable ? "Available" : "Not detected"
+              }
+              active={environmentCredentialAvailable}
+            />
+          </div>
           <div className="flex flex-col px-4 pb-4 pt-2">
             {PROVIDER_OPTIONS.map((provider, index) => {
               const config = PROVIDERS[provider.id];
-              const hasCredential = credentialStatuses[provider.id] ?? false;
+              const hasCredential = credentialState[provider.id] ?? false;
               const isLast = index === PROVIDER_OPTIONS.length - 1;
               return (
                 <div
                   key={provider.id}
                   className={cn(
-                    "flex items-center justify-between gap-3 py-3",
+                    "flex flex-col gap-3 py-4",
                     !isLast && "border-b border-border/60",
                   )}
                 >
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-foreground">
-                      {config.label}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-foreground">
+                        {config.label}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {config.modelDisplayName}
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {config.modelDisplayName}
-                    </div>
+                    <span
+                      className={cn(
+                        "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium",
+                        hasCredential
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+                          : "border-border/60 bg-background/50 text-muted-foreground",
+                      )}
+                    >
+                      {hasCredential ? "Saved" : "Missing"}
+                    </span>
                   </div>
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium",
-                      hasCredential
-                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                        : "border-border/60 bg-background/50 text-muted-foreground",
-                    )}
-                  >
-                    {hasCredential ? "Saved" : "Missing"}
-                  </span>
+                  <div>
+                    <ProviderCredentialControl
+                      providerId={provider.id}
+                      providerLabel={config.label}
+                      hasCredential={hasCredential}
+                      mobileLayout
+                      onStatusChange={(providerId, nextHasCredential) => {
+                        setCredentialState((current) => ({
+                          ...current,
+                          [providerId]: nextHasCredential,
+                        }));
+                      }}
+                    />
+                  </div>
                 </div>
               );
             })}

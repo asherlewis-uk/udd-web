@@ -117,7 +117,7 @@ export async function deleteProviderCredential(
 }
 
 /**
- * Returns credential presence flags only — no secret values are returned.
+ * Returns decryptable credential flags only — no secret values are returned.
  * Safe to call from server components or actions that display provider readiness.
  */
 export async function getProviderCredentialStatuses(): Promise<

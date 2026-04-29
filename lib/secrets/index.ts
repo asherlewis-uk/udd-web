@@ -51,7 +51,7 @@ export async function hasSecret(
   const supabase = await createClient()
   const { data, error } = await supabase
     .from(TABLE)
-    .select("id")
+    .select("encrypted_value")
     .eq("owner_id", ownerId)
     .eq("kind", kind)
     .eq("name", name)
@@ -60,7 +60,14 @@ export async function hasSecret(
     console.log("[v0] hasSecret: lookup failed", { kind, name, error: error.message })
     return false
   }
-  return data !== null
+  if (!data) return false
+  try {
+    decrypt(data.encrypted_value as string)
+    return true
+  } catch {
+    console.log("[v0] hasSecret: decrypt failed", { kind, name })
+    return false
+  }
 }
 
 export async function deleteSecret(

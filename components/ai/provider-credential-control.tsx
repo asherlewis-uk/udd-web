@@ -18,6 +18,7 @@ type ProviderCredentialControlProps = {
   hasCredential: boolean;
   disabled?: boolean;
   compact?: boolean;
+  mobileLayout?: boolean;
   allowDelete?: boolean;
   onStatusChange?: (providerId: ProviderId, hasCredential: boolean) => void;
 };
@@ -28,6 +29,7 @@ export function ProviderCredentialControl({
   hasCredential,
   disabled,
   compact,
+  mobileLayout,
   allowDelete = true,
   onStatusChange,
 }: ProviderCredentialControlProps) {
@@ -91,10 +93,16 @@ export function ProviderCredentialControl({
     <div
       className={cn("flex flex-col gap-2", compact ? "text-[11px]" : "text-xs")}
     >
-      <div className="flex flex-wrap items-center gap-2">
+      <div
+        className={cn(
+          "flex flex-wrap items-center gap-2",
+          mobileLayout && !compact && "items-stretch",
+        )}
+      >
         <span
           className={cn(
             "inline-flex items-center gap-1.5 font-medium",
+            mobileLayout && !compact && "w-full",
             stored
               ? "text-emerald-600 dark:text-emerald-400"
               : "text-muted-foreground",
@@ -107,7 +115,11 @@ export function ProviderCredentialControl({
           <div
             className={cn(
               "flex min-w-0 items-center gap-2",
-              compact ? "flex-1" : "w-full sm:w-auto",
+              compact
+                ? "flex-1"
+                : mobileLayout
+                  ? "w-full flex-col"
+                  : "w-full sm:w-auto",
             )}
           >
             <Input
@@ -120,7 +132,11 @@ export function ProviderCredentialControl({
               disabled={disabled || isPending}
               className={cn(
                 "h-8",
-                compact ? "min-w-44 flex-1 text-xs" : "w-full sm:w-72",
+                compact
+                  ? "min-w-44 flex-1 text-xs"
+                  : mobileLayout
+                    ? "h-11 w-full rounded-2xl border-border/60 bg-background/70"
+                    : "w-full sm:w-72",
               )}
             />
             <Button
@@ -129,6 +145,11 @@ export function ProviderCredentialControl({
               variant={stored ? "outline" : "secondary"}
               disabled={!canSave}
               onClick={handleSave}
+              className={cn(
+                mobileLayout &&
+                  !compact &&
+                  "h-10 w-full justify-center rounded-full",
+              )}
             >
               {isPending ? "Saving..." : stored ? "Replace" : "Save key"}
             </Button>
@@ -141,7 +162,10 @@ export function ProviderCredentialControl({
             variant="outline"
             disabled={disabled || isPending}
             onClick={handleDelete}
-            className="gap-1.5"
+            className={cn(
+              "gap-1.5",
+              mobileLayout && "h-10 w-full justify-center rounded-full",
+            )}
           >
             <Trash2 className="h-3.5 w-3.5" />
             Delete

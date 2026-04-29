@@ -22,14 +22,11 @@ import type {
 import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form";
 import type {
   MobileConversationEntry,
-  MobileFileSummary,
   MobileProject,
   MobileRunEvent,
   MobileRunSession,
-  MobileTaskSummary,
 } from "@/components/mobile/types";
 import type {
-  NextAction,
   ProviderReadiness,
   RunSession,
   RuntimeSummary,
@@ -260,17 +257,10 @@ export default async function WorkspacePage({
   const latestRunEvents = latestRunSession
     ? (runEventsBySessionId.get(latestRunSession.id) ?? [])
     : [];
-  const currentTaskEvents = latestTask
-    ? (taskEventsByTaskId.get(latestTask.id) ?? [])
-    : [];
   const mobileProject = toMobileProject(project, id);
   const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
     toMobileProject(item, id),
   );
-  const mobileFiles = savedFiles.map(toMobileFileSummary);
-  const mobileLatestTask = latestTask
-    ? toMobileTaskSummary(latestTask, currentTaskEvents, id)
-    : null;
   const mobileLatestRunSession = latestRunSession
     ? toMobileRunSession(latestRunSession)
     : null;
@@ -294,18 +284,13 @@ export default async function WorkspacePage({
           displayName: profileData?.display_name ?? null,
         }}
         conversation={mobileConversation}
-        files={mobileFiles}
         filesCount={count}
-        latestTask={mobileLatestTask}
         latestRunSession={mobileLatestRunSession}
-        latestRunSummary={latestRunSummary}
-        validationSummary={validationSummary}
         runEvents={mobileRunEvents}
         nextAction={nextAction}
         activeProvider={activeProvider}
         providerReadiness={providerReadiness}
         taskInFlight={taskInFlight}
-        runInFlight={runInFlight}
       />
       <TaskPoller active={taskInFlight} />
       <RunPoller active={runInFlight} />
@@ -328,37 +313,6 @@ function toMobileProject(
       ? `Opened ${formatRelative(project.last_opened_at)}`
       : null,
     current: project.id === currentProjectId,
-  };
-}
-
-function toMobileFileSummary(file: SavedFile): MobileFileSummary {
-  return {
-    id: file.id,
-    path: file.path,
-    language: file.language,
-    sizeLabel: formatMobileBytes(file.size_bytes),
-    updatedLabel: formatRelative(file.updated_at),
-  };
-}
-
-function toMobileTaskSummary(
-  task: LatestTask,
-  events: AITaskEventRow[],
-  projectId: string,
-): MobileTaskSummary {
-  const canRepair =
-    task.status === "failed" && hasBlockingValidationEvidence(events);
-  return {
-    id: task.id,
-    title: task.title,
-    kind: getRepairMetadata(task.input) ? "repair" : task.kind,
-    status: task.status,
-    createdLabel: formatRelative(task.created_at),
-    finishedLabel: task.finished_at ? formatRelative(task.finished_at) : null,
-    href: `/projects/${projectId}/ai?task=${task.id}`,
-    canRepair,
-    canRetry:
-      (task.status === "failed" || task.status === "cancelled") && !canRepair,
   };
 }
 
@@ -613,12 +567,6 @@ function runStatusLabel(status: LatestRunSession["status"]): string {
     error: "failed",
   };
   return labels[status];
-}
-
-function formatMobileBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 type GenerationOperation = {

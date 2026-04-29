@@ -13,6 +13,8 @@ analysis, dead-code detection). Performed on clean branch `main` with no uncommi
 - `gortex status`: 1548 nodes, 4000 edges, daemon healthy
 - `npx gitnexus detect-changes`: no changes
 
+**Current working-tree resolution note:** HIGH items B-1, B-3, C-1, F-1, and G-2 have been addressed in the current working tree. A-1 is resolved by implementing mobile credential controls and updating `docs/system-state.md`; A-2 remains surfaced through `nextAction` instead of being dropped.
+
 ---
 
 ## Severity Scale
