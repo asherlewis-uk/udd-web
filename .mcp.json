@@ -1,16 +1,30 @@
 {
   "mcpServers": {
     "gortex": {
-      "command": "gortex",
+      "command": "/opt/homebrew/bin/gortex",
       "args": [
         "mcp",
-        "--index", ".",
-        "--watch",
-        "--web"
+        "--index",
+        ".",
+        "--watch"
       ],
       "env": {
         "GORTEX_INDEX_WORKERS": "${GORTEX_WORKERS:-8}"
       }
+    },
+    "gitnexus": {
+      "command": "/opt/homebrew/bin/gitnexus",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    },
+    "ghost-os": {
+      "command": "/opt/homebrew/bin/ghost",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
     }
   }
 }

@@ -19,6 +19,7 @@ export function MobileShell({
   activeProvider,
   providerReadiness,
   taskInFlight,
+  nextAction,
 }: MobileShellProps) {
   const [currentScreen, setCurrentScreen] = useState<MobileScreen>("chat");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -49,6 +50,7 @@ export function MobileShell({
           activeProvider={activeProvider}
           providerReadiness={providerReadiness}
           taskInFlight={taskInFlight}
+          nextAction={nextAction}
           onMenuClick={() => setIsDrawerOpen(true)}
           onPreviewClick={navigateToPreview}
           onProjectPillClick={() => setIsDrawerOpen(true)}

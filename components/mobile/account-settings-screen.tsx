@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { CheckCircle2, KeyRound, LogOut, User } from "lucide-react";
+import { CheckCircle2, KeyRound, LogOut, Trash2, User } from "lucide-react";
 import { updateDisplayName } from "@/app/actions/profile";
 import { saveAIProviderConfig } from "@/app/actions/provider-configs";
 import {
@@ -243,6 +243,30 @@ export function MobileAccountSettingsScreen({
               );
             })}
           </div>
+        </SettingsGroup>
+
+        <SettingsGroup title="Danger zone">
+          <p className="px-4 pt-4 text-sm text-muted-foreground">
+            Account deletion is required for App Store compliance but backend
+            support is not yet implemented. This will be available before
+            TestFlight submission.
+          </p>
+          <div className="px-4 py-4">
+            <button
+              type="button"
+              disabled
+              className="flex w-full items-center justify-center gap-2 rounded-full border border-destructive/30 px-5 py-3 text-sm font-medium text-destructive/50 transition disabled:cursor-not-allowed"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete account
+            </button>
+          </div>
+          <p className="px-4 pb-4 text-xs text-muted-foreground">
+            Requires a deleteAccount server action with service-role Supabase
+            access (supabase.auth.admin.deleteUser), a delete_user database
+            RPC, user_secrets cleanup, and cascade confirmation. Not available
+            yet — no client-only deletion behavior is exposed.
+          </p>
         </SettingsGroup>
       </div>
 

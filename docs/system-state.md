@@ -228,7 +228,7 @@ Settings writes provider preference through `saveAIProviderConfig`; credentials 
 
 The primary cockpit page resolves the active provider, provider credential presence flags, and AI Gateway environment fallback state server-side, then passes serializable readiness booleans to the mobile shell, composer, next-action line, and mobile settings surface. (app/(app)/projects/[id]/page.tsx:210–234, 307–327; components/mobile/mobile-shell.tsx:47–80)
 
-The primary mobile cockpit does not save credentials inline. Its composer treats readiness as ready only when the selected provider has a saved credential or environment fallback, disables prompt submission otherwise, and links to Settings with copy that says a saved key or environment fallback is needed. The in-cockpit mobile settings surface remains a project-context shortcut/status surface; global mobile `/settings` is the mobile account/provider management surface and renders `ProviderCredentialControl` for normal credential save/replace/delete. (components/mobile/composer.tsx:51–53, 89–100, 105–119; components/mobile/settings-screen.tsx:49–76; components/mobile/account-settings-screen.tsx:121–221; components/ai/provider-credential-control.tsx:51–153)
+The primary mobile cockpit does not save credentials inline. Its composer treats readiness as ready only when the selected provider has a saved credential or environment fallback, disables prompt submission otherwise, and links to Settings with copy that says a saved key or environment fallback is needed. The in-cockpit mobile settings surface remains a project-context shortcut/status surface; global mobile `/settings` is the mobile account/provider management surface, displays per-provider credential status badges (Saved/Missing), provides provider selection, and directs users to the desktop Settings surface for credential save/replace/delete. `ProviderCredentialControl` is rendered only on the desktop Settings surface. (components/mobile/composer.tsx:51–53, 89–100, 105–119; components/mobile/settings-screen.tsx:49–76; components/mobile/account-settings-screen.tsx:121–246; components/ai/provider-credential-control.tsx:51–153)
 
 The AI tab remains a secondary generation-inspection surface. It renders `AIPromptForm` in its default mode without provider-readiness props, so it does not expose provider selection or credential controls. `AIPromptForm` still contains conditional cockpit provider controls for callers that pass `variant="cockpit"` plus `activeProvider`, but the current primary mobile cockpit no longer renders that path. (app/(app)/projects/[id]/ai/page.tsx:98–106; components/ai/ai-prompt-form.tsx:52–64, 99–109, 205–249, 290–294)
 
@@ -260,6 +260,7 @@ Each surface below is labeled **schema only — no app code callers**.
 | `previews` table                     | scripts/001_init_schema.sql  | schema only — no app code callers               | Verified by reading all files in lib/ and app/actions/ |
 | `provider_configs.secret_ref` column | scripts/001_init_schema.sql  | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql               |
 | `user_secrets` table                 | scripts/005_user_secrets.sql | active — read/write by lib/secrets/index.ts     | lib/secrets/index.ts, app/actions/secrets.ts           |
+| Account deletion (deleteAccount)     | none                         | backend gap — no service-role client, RPC, or action exists | §Intentional Constraints constraint 6                 |
 
 `run_sessions.preview_url` is active application schema. It stores only a real local preview endpoint after readiness succeeds, and it is cleared on stop, stale cleanup, and errors. (lib/runtime/service.ts:275–295, 119–126, 367–373, 393–400)
 
@@ -416,3 +417,7 @@ _Why_: Writing a fake URL violates the Preview Truth invariant in CLAUDE.md §Pr
 `runAITask` and `driveSession` must be scheduled via `after()`, not awaited inline in the server action. (app/actions/ai.ts:102–104, app/actions/run.ts:19–21)
 
 _Why_: The task or session row must be inserted and visible in the UI before background execution begins. Awaiting inline would block the HTTP response until model generation or file parsing completes, preventing visible progress state from ever rendering.
+
+**6. Account deletion is a documented backend gap — not yet implemented.**
+
+No `deleteAccount` server action, service-role Supabase client (`supabase.auth.admin`), or `delete_user` RPC exists. The mobile Settings surface exposes a disabled "Delete account" row with copy documenting the missing backend requirements. This must be implemented before TestFlight submission (App Store Review Guideline 5.1.1).

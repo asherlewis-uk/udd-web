@@ -1,3 +1,17 @@
+## Repo operating contract
+
+This repo is governed by `CLAUDE.md`, `AGENTS.md`, `docs/system-state.md`, `docs/first_beta_remaining_work_audit.md`, and the task-specific skills in `.github/skills/`.
+
+- Read the relevant canonical docs before product work. Use `docs/first_beta_remaining_work_audit.md` as the active beta work queue, and use `.github/skills/*` for task-specific workflows.
+- Treat TypeScript, SQL, and server-action implementation as source of record. If docs, graph output, or comments conflict with source, follow source and report the drift.
+- Use Gortex/GitNexus when available for symbol lookup, callers, impact, and execution-flow context. Keep graph output targeted; do not paste broad JSON or route dumps into final answers.
+- Preserve product truth: do not claim execution, live preview, deployment, persistence, credential storage, or completion unless source implements and uses the real path.
+- Do not present invented capability as real, ship unfinished-behavior shims, leave dead controls, make unsupported claims, put sample-only behavior in production, or defer required work in comments.
+- Keep changes scoped. Inspect staged and unstaged diffs separately, never stage unrelated files, and never mix tooling/config drift with product commits unless explicitly requested.
+- Preserve security boundaries: no client-side secrets, unsafe credential UI, fake account deletion, or weakening of auth, RLS, BYOK, owner filtering, or server-only secret handling.
+- Verify product changes with `pnpm typecheck`, `pnpm build`, `git --no-pager diff --check`, `git --no-pager status --short`, and `git --no-pager diff --stat` unless the task is docs/skills-only and a narrower check is justified.
+- Report uncertainty instead of guessing. Separate evidence-backed findings from assumptions, UX polish, and runtime checks still needed.
+
 <!-- gortex:communities:start -->
 <!-- gortex:skills:start -->
 ## Community Skills

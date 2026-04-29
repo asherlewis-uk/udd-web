@@ -27,3 +27,7 @@ yarn-error.log*
 next-env.d.ts
 .gitnexus
 .env*.local
+
+.DS_Store
+.mcp.json.bak
+.mcp.json.bak.*

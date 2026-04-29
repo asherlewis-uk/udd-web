@@ -1,6 +1,8 @@
 {
   "permissions": {
     "allow": [
+      "mcp__ghost-os__*",
+      "mcp__gitnexus__*",
       "mcp__gortex__*"
     ]
   }

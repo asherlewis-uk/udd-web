@@ -8,7 +8,7 @@ import { Composer } from "./composer";
 import { ProjectPill } from "./project-pill";
 import type { MobileConversationEntry, MobileProject } from "./types";
 import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form";
-import type { ProviderReadiness } from "@/lib/workspace/next-action";
+import type { NextAction, ProviderReadiness } from "@/lib/workspace/next-action";
 
 export function ChatBuildScreen({
   project,
@@ -16,6 +16,7 @@ export function ChatBuildScreen({
   activeProvider,
   providerReadiness,
   taskInFlight,
+  nextAction,
   onMenuClick,
   onPreviewClick,
   onProjectPillClick,
@@ -25,6 +26,7 @@ export function ChatBuildScreen({
   activeProvider: ActiveProviderInfo;
   providerReadiness: ProviderReadiness;
   taskInFlight: boolean;
+  nextAction: NextAction;
   onMenuClick: () => void;
   onPreviewClick: () => void;
   onProjectPillClick: () => void;
@@ -68,6 +70,7 @@ export function ChatBuildScreen({
       </div>
 
       <div className="flex flex-none flex-col gap-3 pb-safe">
+        <NextActionHint nextAction={nextAction} projectId={project.id} />
         <div className="flex justify-center">
           <ProjectPill
             projectTitle={project.name}
@@ -94,6 +97,57 @@ function EmptyChatState() {
         <span className="text-lg font-semibold tracking-wide text-muted-foreground">
           UDD
         </span>
+      </div>
+    </div>
+  );
+}
+
+const SUPPRESS_HINT_ACTIONS = new Set(["local_prompt", "inspect_generation"]);
+
+function NextActionHint({
+  nextAction,
+  projectId,
+}: {
+  nextAction: NextAction;
+  projectId: string;
+}) {
+  if (SUPPRESS_HINT_ACTIONS.has(nextAction.cta.action)) return null;
+
+  const isBlocked = nextAction.state === "blocked";
+
+  return (
+    <div className="mx-auto w-full max-w-3xl px-4">
+      <div
+        className={cn(
+          "rounded-2xl border px-4 py-3 text-sm",
+          isBlocked
+            ? "border-amber-500/20 bg-amber-500/5"
+            : "border-border/50 bg-secondary/35",
+        )}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium text-foreground">{nextAction.label}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
+              {nextAction.description}
+            </p>
+          </div>
+          <Link
+            href={
+              nextAction.cta.taskId
+                ? `/projects/${projectId}/ai?task=${nextAction.cta.taskId}`
+                : nextAction.cta.href
+            }
+            className={cn(
+              "shrink-0 rounded-full px-4 py-2 text-xs font-medium transition active:scale-95",
+              isBlocked
+                ? "bg-amber-500/15 text-amber-300"
+                : "bg-foreground text-background",
+            )}
+          >
+            {nextAction.cta.label}
+          </Link>
+        </div>
       </div>
     </div>
   );

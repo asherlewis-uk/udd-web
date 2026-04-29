@@ -42,6 +42,28 @@ This project is indexed by GitNexus as **udd-web** (2423 symbols, 4844 relations
 
 <!-- gitnexus:end -->
 
+## Repo Intelligence Tooling
+
+GitNexus and Gortex may both be installed.
+
+Use GitNexus when existing project instructions explicitly require:
+- gitnexus analyze
+- gitnexus detect-changes
+- GitNexus impact checks
+- GitNexus metadata refresh
+
+Use Gortex when deeper graph context is needed:
+- symbol lookup
+- call chains
+- smart_context
+- test target discovery
+- contract checks
+- cross-file or cross-repo impact analysis
+
+Do not run both tools redundantly unless the task is high risk or one tool gives incomplete results.
+
+If outputs disagree, stop and report the disagreement before editing.
+
 <!-- gortex:communities:start -->
 <!-- gortex:skills:start -->
 ## Community Skills
