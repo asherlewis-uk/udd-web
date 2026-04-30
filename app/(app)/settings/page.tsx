@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { AccountForm } from "@/components/settings/account-form";
+import { AccountDangerZone } from "@/components/settings/account-danger-zone";
 import { ProviderForm } from "@/components/settings/provider-form";
 import { MobileAccountSettingsScreen } from "@/components/mobile/account-settings-screen";
 import { Button } from "@/components/ui/button";
@@ -106,6 +107,8 @@ export default async function SettingsPage() {
             </form>
           </div>
         </section>
+
+        <AccountDangerZone />
       </main>
     </>
   );

@@ -260,7 +260,7 @@ Each surface below is labeled **schema only — no app code callers**.
 | `previews` table                     | scripts/001_init_schema.sql  | schema only — no app code callers               | Verified by reading all files in lib/ and app/actions/ |
 | `provider_configs.secret_ref` column | scripts/001_init_schema.sql  | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql               |
 | `user_secrets` table                 | scripts/005_user_secrets.sql | active — read/write by lib/secrets/index.ts     | lib/secrets/index.ts, app/actions/secrets.ts           |
-| Account deletion (deleteAccount)     | none                         | backend gap — no service-role client, RPC, or action exists | §Intentional Constraints constraint 6                 |
+| Account deletion (deleteAccount)     | app/actions/profile.ts       | IMPLEMENTED — deleteAccount server action with service-role Supabase client deletes auth user (cascades to profiles, projects, project_files, prompts, user_secrets via ON DELETE CASCADE). Mobile and desktop Settings expose confirm dialog. | §Intentional Constraints constraint 6                 |
 
 `run_sessions.preview_url` is active application schema. It stores only a real local preview endpoint after readiness succeeds, and it is cleared on stop, stale cleanup, and errors. (lib/runtime/service.ts:275–295, 119–126, 367–373, 393–400)
 
@@ -418,6 +418,6 @@ _Why_: Writing a fake URL violates the Preview Truth invariant in CLAUDE.md §Pr
 
 _Why_: The task or session row must be inserted and visible in the UI before background execution begins. Awaiting inline would block the HTTP response until model generation or file parsing completes, preventing visible progress state from ever rendering.
 
-**6. Account deletion is a documented backend gap — not yet implemented.**
+**6. Account deletion is implemented through service-role auth deletion.**
 
-No `deleteAccount` server action, service-role Supabase client (`supabase.auth.admin`), or `delete_user` RPC exists. The mobile Settings surface exposes a disabled "Delete account" row with copy documenting the missing backend requirements. This must be implemented before TestFlight submission (App Store Review Guideline 5.1.1).
+`deleteAccount` uses the service-role Supabase client (`supabase.auth.admin.deleteUser`) to delete the authenticated auth user. Database cascades remove profiles, projects, project_files, prompts, and user_secrets through `ON DELETE CASCADE`; mobile and desktop Settings expose a confirm dialog before deletion.

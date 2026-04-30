@@ -3,9 +3,20 @@
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { CheckCircle2, KeyRound, LogOut, Trash2, User } from "lucide-react";
-import { updateDisplayName } from "@/app/actions/profile";
+import { deleteAccount, updateDisplayName } from "@/app/actions/profile";
 import { saveAIProviderConfig } from "@/app/actions/provider-configs";
 import { ProviderCredentialControl } from "@/components/ai/provider-credential-control";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   getProviderOptions,
   PROVIDERS,
@@ -95,6 +106,24 @@ export function MobileAccountSettingsScreen({
       } catch (error) {
         toast.error(
           error instanceof Error ? error.message : "Failed to save provider",
+        );
+      }
+    });
+  }
+
+  function handleDeleteAccount() {
+    startTransition(async () => {
+      try {
+        const result = await deleteAccount();
+        if (result.success) {
+          window.location.href = "/";
+          return;
+        }
+
+        toast.error(result.error ?? "Failed to delete account");
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Failed to delete account",
         );
       }
     });
@@ -276,27 +305,37 @@ export function MobileAccountSettingsScreen({
         </SettingsGroup>
 
         <SettingsGroup title="Danger zone">
-          <p className="px-4 pt-4 text-sm text-muted-foreground">
-            Account deletion is required for App Store compliance but backend
-            support is not yet implemented. This will be available before
-            TestFlight submission.
-          </p>
           <div className="px-4 py-4">
-            <button
-              type="button"
-              disabled
-              className="flex w-full items-center justify-center gap-2 rounded-full border border-destructive/30 px-5 py-3 text-sm font-medium text-destructive/50 transition disabled:cursor-not-allowed"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete account
-            </button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-2 rounded-full border border-destructive/50 px-5 py-3 text-sm font-medium text-destructive transition active:scale-[0.99]"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete account
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete account</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This permanently deletes your account, all projects, files,
+                    and credentials. This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    onClick={handleDeleteAccount}
+                  >
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
-          <p className="px-4 pb-4 text-xs text-muted-foreground">
-            Requires a deleteAccount server action with service-role Supabase
-            access (supabase.auth.admin.deleteUser), a delete_user database
-            RPC, user_secrets cleanup, and cascade confirmation. Not available
-            yet — no client-only deletion behavior is exposed.
-          </p>
         </SettingsGroup>
       </div>
 
