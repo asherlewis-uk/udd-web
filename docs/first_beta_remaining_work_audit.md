@@ -13,7 +13,18 @@ analysis, dead-code detection). Performed on clean branch `main` with no uncommi
 - `gortex status`: 1548 nodes, 4000 edges, daemon healthy
 - `npx gitnexus detect-changes`: no changes
 
-**Current working-tree resolution note:** HIGH items B-1, B-3, C-1, F-1, and G-2 have been addressed in the current working tree. A-1 is resolved by implementing mobile credential controls and updating `docs/system-state.md`; A-2 remains surfaced through `nextAction` instead of being dropped.
+**Reconciliation stamp: 2026-04-29** — Cross-checked against `docs/source_reality_alignment_audit.md`. Source confirms the following items are resolved and the audit bodies below are retained for historical trace only. See the updated Dispatch Guide for the reduced fleet assignments.
+
+Resolved items (source-verified):
+- **A-1** — `ProviderCredentialControl` rendered in `MobileAccountSettingsScreen` at line 259. `docs/system-state.md` updated.
+- **A-2** — `nextAction` flows through `MobileShell → ChatBuildScreen → NextActionHint`.
+- **B-1** — `incoming-ui/` directory deleted.
+- **B-3** — All six previously-unused `MobileShellProps` fields now consumed.
+- **F-1** — BYOK KDF upgraded to `scryptSync` (v2 format).
+- **G-2** — Mobile credential management implemented (same as A-1).
+
+Still active across both audits:
+- Forward-looking schema-only surfaces (`previews`, `exports`) remain DOC_ONLY.
 
 ---
 
@@ -640,27 +651,27 @@ discarded with no indicator. Consider adding a "showing last 200 events" note.
 
 ## Summary Table
 
-| ID | Area | Severity | File(s) |
-|----|------|----------|---------|
-| A-1 | system-state.md drift: mobile credentials | **BLOCKING** | `docs/system-state.md:231`, `components/mobile/account-settings-screen.tsx` |
-| A-2 | `nextAction` computed but never consumed | **BLOCKING** | `app/(app)/projects/[id]/page.tsx:249`, `components/mobile/mobile-shell.tsx` |
-| B-1 | `incoming-ui/` demo prototype in repo | **HIGH** | `incoming-ui/udd-mobile/` |
-| B-2 | `BottomControls` — zero callers, dead | **MEDIUM** | `components/mobile/bottom-controls.tsx` |
-| B-3 | 6 `MobileShellProps` fields unused by `MobileShell` | **HIGH** | `components/mobile/types.ts`, `components/mobile/mobile-shell.tsx` |
-| C-1 | Mobile delete: no try/catch, no toast | **HIGH** | `components/mobile/project-settings-screen.tsx:200` |
-| C-2 | `updateProjectStatus` missing settings page revalidation | **MEDIUM** | `app/actions/projects.ts:63` |
-| C-3 | Error boundary desktop-only layout | **MEDIUM** | `app/(app)/projects/[id]/error.tsx` |
-| D-1 | User menu: two items both link to `/settings` | **MEDIUM** | `components/app/user-menu.tsx:44` |
-| D-2 | `EmptyChatState` — no onboarding copy | **MEDIUM** | `components/mobile/chat-build-screen.tsx:90` |
-| D-3 | Actions menu: "Preview: idle" — internal term | **LOW** | `components/mobile/project-actions-menu.tsx:72` |
-| D-4 | Preview running+no-URL uses destructive icon | **LOW** | `components/mobile/preview-screen.tsx:137` |
-| D-5 | `/run` mobile route missing `ProjectDrawer` | **MEDIUM** | `components/mobile/preview-route-screen.tsx` |
-| E-1 | `/projects/new` — no mobile layout | **MEDIUM** | `app/(app)/projects/new/page.tsx` |
-| E-2 | `/projects/[id]/ai` — no mobile layout | **MEDIUM** | `app/(app)/projects/[id]/ai/page.tsx` |
-| F-1 | BYOK encryption: no KDF key stretching | **HIGH** | `lib/secrets/crypto.ts:4` |
-| F-2 | Silent decrypt failure returns null | **MEDIUM** | `lib/secrets/index.ts:41` |
-| G-1 | No account deletion (App Store requirement) | **BLOCKING** | `app/actions/profile.ts` |
-| G-2 | Mobile cannot manage BYOK credentials | **HIGH** | `components/mobile/account-settings-screen.tsx:206` |
+| ID | Area | Severity | Status | File(s) |
+|----|------|----------|--------|---------|
+| A-1 | system-state.md drift: mobile credentials | ~~BLOCKING~~ | ✅ RESOLVED | `components/mobile/account-settings-screen.tsx` |
+| A-2 | `nextAction` computed but never consumed | ~~BLOCKING~~ | ✅ RESOLVED | `components/mobile/chat-build-screen.tsx`, `components/mobile/mobile-shell.tsx` |
+| B-1 | `incoming-ui/` demo prototype in repo | ~~HIGH~~ | ✅ RESOLVED | (deleted) |
+| B-2 | `BottomControls` — zero callers, dead | **MEDIUM** | ACTIVE | `components/mobile/bottom-controls.tsx` |
+| B-3 | Six `MobileShellProps` fields unused by `MobileShell` | ~~HIGH~~ | ✅ RESOLVED | `components/mobile/types.ts`, `components/mobile/mobile-shell.tsx` |
+| C-1 | Mobile delete: no try/catch, no toast | **HIGH** | ACTIVE | `components/mobile/project-settings-screen.tsx:200` |
+| C-2 | `updateProjectStatus` missing settings page revalidation | **MEDIUM** | ACTIVE | `app/actions/projects.ts:63` |
+| C-3 | Error boundary desktop-only layout | **MEDIUM** | ACTIVE | `app/(app)/projects/[id]/error.tsx` |
+| D-1 | User menu: two items both link to `/settings` | **MEDIUM** | ACTIVE | `components/app/user-menu.tsx:44` |
+| D-2 | `EmptyChatState` — no onboarding copy | **MEDIUM** | ACTIVE | `components/mobile/chat-build-screen.tsx:90` |
+| D-3 | Actions menu: "Preview: idle" — internal term | **LOW** | ACTIVE | `components/mobile/project-actions-menu.tsx:72` |
+| D-4 | Preview running+no-URL uses destructive icon | **LOW** | ACTIVE | `components/mobile/preview-screen.tsx:137` |
+| D-5 | `/run` mobile route missing `ProjectDrawer` | **MEDIUM** | ACTIVE | `components/mobile/preview-route-screen.tsx` |
+| E-1 | `/projects/new` — no mobile layout | **MEDIUM** | ACTIVE | `app/(app)/projects/new/page.tsx` |
+| E-2 | `/projects/[id]/ai` — no mobile layout | **MEDIUM** | ACTIVE | `app/(app)/projects/[id]/ai/page.tsx` |
+| F-1 | BYOK encryption: no KDF key stretching | ~~HIGH~~ | ✅ RESOLVED | `lib/secrets/crypto.ts` |
+| F-2 | Silent decrypt failure returns null | **MEDIUM** | ACTIVE | `lib/secrets/index.ts:41` |
+| G-1 | No account deletion (App Store requirement) | **BLOCKING** | ACTIVE | `app/actions/profile.ts` |
+| G-2 | Mobile cannot manage BYOK credentials | ~~HIGH~~ | ✅ RESOLVED | `components/mobile/account-settings-screen.tsx:206` |
 | H-1 | Gortex MCP server not registered | **LOW** | `~/.claude/settings.json` |
 | I-1 | Hardcoded "v0.1" version string | **LOW** | `app/page.tsx:43` |
 | I-2 | "self-hosted-ready" claim needs verification | **LOW** | `app/page.tsx:102` |
@@ -668,52 +679,33 @@ discarded with no indicator. Consider adding a "showing last 200 events" note.
 
 ---
 
-## Dispatch Guide for Subagents
+## Dispatch Guide for Subagents (Post-Reconciliation)
 
-### Fleet A — Product Truth / Spec Fixes
-**Items:** A-1, A-2, B-3
-**Constraint:** Read `CLAUDE.md §Product Truth Contract` and `docs/system-state.md` before touching
-anything. Any change to described behavior must update `system-state.md` in the same pass.
-**Do not** make UX decisions about whether to surface `nextAction` — flag the gap and let the
-product owner decide direction before implementing.
+> Reconciliation date: 2026-04-29. Six items resolved since original audit (A-1, A-2, B-1, B-3, F-1, G-2). Only active items shown below.
 
-### Fleet B — Dead Code Removal
-**Items:** B-1, B-2
-**Constraint:** Verify no imports before deleting. For B-1 (`incoming-ui/`), confirm the directory
-is not referenced by `tsconfig.json`, `next.config.mjs`, or any import before removing. For B-2,
-run `mcp__gitnexus__context` to re-confirm zero callers before deleting.
+### Fleet G — Blocker: Account Deletion
+**Items:** G-1
+**Constraint:** BLOCKING. Requires service-role Supabase access — check whether `supabase.auth.admin` is available in the server action context or if a DB-level RPC is needed. Read `scripts/001_init_schema.sql` and `scripts/005_user_secrets.sql` for cascade behavior before writing the action. Must implement: `deleteAccount` server action, cascade-delete/anonymize profiles + secrets + auth user, sign out + redirect, confirm dialog in both mobile and desktop Settings.
 
 ### Fleet C — Bug Fixes
 **Items:** C-1, C-2, C-3
-**Constraint:** Run `mcp__gitnexus__impact` on any modified server action. C-1 is a surgical
-try/catch addition — do not refactor the wider component. C-2 is a one-line `revalidatePath` add.
+**Constraint:** Run `mcp__gitnexus__impact` on any modified server action. C-1 is a surgical try/catch addition — do not refactor the wider component. C-2 is a one-line `revalidatePath` add. C-3: add responsive treatment to the error boundary.
 
 ### Fleet D — UI Polish and Copy
 **Items:** D-1, D-2, D-3, D-4, D-5
-**Constraint:** Match existing Tailwind patterns exactly. Do not introduce new design tokens. For
-D-5 (run route drawer), verify the pattern matches `MobileRouteShell` exactly before implementing.
+**Constraint:** Match existing Tailwind patterns exactly. Do not introduce new design tokens. For D-5 (run route drawer), verify the pattern matches `MobileRouteShell` exactly before implementing.
 
 ### Fleet E — Mobile Surface Completion
 **Items:** E-1, E-2
-**Constraint:** Follow the exact pattern used by `app/(app)/projects/[id]/files/page.tsx` (for E-1)
-and `app/(app)/projects/[id]/logs/page.tsx` (for E-2): `<div className="md:hidden">` + mobile
-component wrapped in `MobileRouteShell`, then `<WorkspaceContainer className="hidden md:flex">` for
-the desktop branch. Match the data-fetching pattern (all queries in one `Promise.all`).
+**Constraint:** Follow the exact pattern used by `app/(app)/projects/[id]/files/page.tsx` (for E-1) and `app/(app)/projects/[id]/logs/page.tsx` (for E-2): `<div className="md:hidden">` + mobile component wrapped in `MobileRouteShell`, then `<WorkspaceContainer className="hidden md:flex">` for the desktop branch.
 
 ### Fleet F — Security
-**Items:** F-1, F-2
-**Constraint:** Read `lib/secrets/crypto.ts`, `lib/secrets/index.ts`, and
-`docs/system-state.md §Credential handling` before touching. For F-1: any KDF change invalidates
-existing ciphertexts — document a migration path before implementing. For F-2: do not change the
-error-handling behavior without first understanding what the caller does with `null`.
+**Items:** F-2
+**Constraint:** Read `lib/secrets/crypto.ts`, `lib/secrets/index.ts`, and `docs/system-state.md §Credential handling` before touching. Do not change the error-handling behavior without first understanding what the caller does with `null`.
 
-### Fleet G — Missing Features
-**Items:** G-1, G-2
-**Constraint:** G-1 (account deletion) requires service-role Supabase access — check whether
-`supabase.auth.admin` is available in the server action context or if a DB-level RPC is needed.
-Read `scripts/001_init_schema.sql` and `scripts/005_user_secrets.sql` for cascade behavior before
-writing the action. G-2 should be implemented only after A-1 is resolved (spec and source must
-agree first).
+### Fleet B-2 — Dead Code (single item)
+**Items:** B-2
+**Constraint:** Verify no imports before deleting. Run `mcp__gitnexus__context` to re-confirm zero callers before deleting `components/mobile/bottom-controls.tsx`.
 
 ### Fleet H — Tooling
 **Items:** H-1
