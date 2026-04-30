@@ -16,6 +16,8 @@ export type ProviderConfig = {
   modelDisplayName: string;
 };
 
+export type ProviderCredentialStatus = "missing" | "valid" | "invalid";
+
 export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
   openai: {
     id: "openai",

@@ -66,7 +66,11 @@ export function SettingsScreen({
               <StatusTile
                 label="Saved key"
                 value={
-                  providerReadiness.hasSavedCredential ? "Present" : "Not saved"
+                  providerReadiness.hasSavedCredential
+                    ? "Present"
+                    : providerReadiness.hasInvalidCredential
+                      ? "Needs replacement"
+                      : "Not saved"
                 }
               />
               <StatusTile

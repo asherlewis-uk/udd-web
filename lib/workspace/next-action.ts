@@ -52,6 +52,7 @@ export type ProviderReadiness = {
   label: string;
   model: string;
   hasSavedCredential: boolean;
+  hasInvalidCredential?: boolean;
   hasEnvironmentCredential: boolean;
   ready: boolean;
 };
@@ -513,6 +514,20 @@ function providerBlockedAction(args: {
 }): NextAction | null {
   const provider = args.providerReadiness;
   if (!provider || provider.ready) return null;
+  if (provider.hasInvalidCredential) {
+    return {
+      code: args.code,
+      label: "Replace provider credential",
+      description: `${provider.label} has a saved credential, but it could not be read. Replace or delete it before trying to ${args.purpose}.`,
+      cta: {
+        label: "Use provider credential field below",
+        href: args.href,
+        action: "provider_credential",
+      },
+      reason: `Provider readiness is blocked: selected provider=${provider.id}, saved credential=invalid, environment fallback=${provider.hasEnvironmentCredential}.`,
+      state: "blocked",
+    };
+  }
 
   return {
     code: args.code,

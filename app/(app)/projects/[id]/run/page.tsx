@@ -13,8 +13,10 @@ import { MobilePreviewRouteScreen } from "@/components/mobile/preview-route-scre
 import { createClient } from "@/lib/supabase/server";
 import { formatRelative } from "@/lib/slug";
 import { reapStaleSessions } from "@/lib/runtime/service";
-import type { RunStatus } from "@/lib/types";
+import type { Project, RunStatus } from "@/lib/types";
 import type {
+  MobileProject,
+  MobileProfile,
   MobileRunEvent,
   MobileRunSession,
 } from "@/components/mobile/types";
@@ -35,12 +37,29 @@ export default async function RunPage({
   } = await supabase.auth.getUser();
   if (!user) notFound();
 
-  const { data: project } = await supabase
-    .from("projects")
-    .select("id, name")
-    .eq("id", id)
-    .eq("owner_id", user.id)
-    .maybeSingle();
+  const [
+    { data: project },
+    { data: allProjectsData },
+    { data: profileData },
+  ] = await Promise.all([
+    supabase
+      .from("projects")
+      .select("*")
+      .eq("id", id)
+      .eq("owner_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("projects")
+      .select("*")
+      .eq("owner_id", user.id)
+      .order("updated_at", { ascending: false })
+      .limit(30),
+    supabase
+      .from("profiles")
+      .select("display_name")
+      .eq("id", user.id)
+      .maybeSingle(),
+  ]);
   if (!project) notFound();
 
   // Opportunistically mark any long-stalled sessions as error before loading
@@ -102,12 +121,24 @@ export default async function RunPage({
 
   const mobileSession = current ? toMobileRunSession(current) : null;
   const mobileEvents = events.map(toMobileRunEvent);
+  const typedProject = project as Project;
+  const mobileProject = toMobileProject(typedProject, id);
+  const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
+    toMobileProject(item, id),
+  );
+  const mobileProfile: MobileProfile = {
+    email: user.email ?? "",
+    displayName: profileData?.display_name ?? null,
+  };
 
   return (
     <>
       <MobilePreviewRouteScreen
         projectId={id}
-        projectName={project.name as string}
+        projectName={typedProject.name}
+        project={mobileProject}
+        projects={mobileProjects}
+        profile={mobileProfile}
         filesCount={filesCount ?? 0}
         session={mobileSession}
         events={mobileEvents}
@@ -133,7 +164,7 @@ export default async function RunPage({
           <div className="lg:col-span-3">
             <PreviewPanel
               status={status}
-              projectName={project.name as string}
+              projectName={typedProject.name}
               previewUrl={current?.preview_url ?? null}
               error={current?.error ?? null}
             />
@@ -163,6 +194,24 @@ export default async function RunPage({
       </WorkspaceContainer>
     </>
   );
+}
+
+function toMobileProject(
+  project: Project,
+  currentProjectId: string,
+): MobileProject {
+  return {
+    id: project.id,
+    name: project.name,
+    slug: project.slug,
+    description: project.description,
+    status: project.status,
+    updatedLabel: `Updated ${formatRelative(project.updated_at)}`,
+    lastOpenedLabel: project.last_opened_at
+      ? `Opened ${formatRelative(project.last_opened_at)}`
+      : null,
+    current: project.id === currentProjectId,
+  };
 }
 
 function toMobileRunSession(session: {

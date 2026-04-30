@@ -3,6 +3,7 @@
 import {
   CircleAlert,
   ExternalLink,
+  Info,
   Loader2,
   MessageSquare,
   MoreHorizontal,
@@ -20,6 +21,7 @@ export function PreviewScreen({
   events,
   onBackToChat,
   onActionsClick,
+  showHeader = true,
 }: {
   projectId: string;
   projectName: string;
@@ -28,6 +30,7 @@ export function PreviewScreen({
   events: MobileRunEvent[];
   onBackToChat: () => void;
   onActionsClick: () => void;
+  showHeader?: boolean;
 }) {
   const status = session?.status ?? "idle";
   const previewUrl = session?.previewUrl ?? null;
@@ -35,34 +38,40 @@ export function PreviewScreen({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 pt-4">
-        <button
-          type="button"
-          onClick={onBackToChat}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-foreground transition active:scale-95"
-          aria-label="Back to chat"
-        >
-          <MessageSquare className="h-5 w-5" />
-        </button>
-        <div className="min-w-0 text-center">
-          <div className="truncate text-sm font-medium text-foreground">
-            {projectName}
+      {showHeader ? (
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 pt-4">
+          <button
+            type="button"
+            onClick={onBackToChat}
+            className="flex h-11 w-11 items-center justify-center rounded-full text-foreground transition active:scale-95"
+            aria-label="Back to chat"
+          >
+            <MessageSquare className="h-5 w-5" />
+          </button>
+          <div className="min-w-0 text-center">
+            <div className="truncate text-sm font-medium text-foreground">
+              {projectName}
+            </div>
+            <div className="text-xs capitalize text-muted-foreground">
+              {status === "idle" ? "Preview" : status}
+            </div>
           </div>
-          <div className="text-xs capitalize text-muted-foreground">
-            {status === "idle" ? "Preview" : status}
-          </div>
+          <button
+            type="button"
+            onClick={onActionsClick}
+            className="flex h-11 w-11 items-center justify-center rounded-full text-foreground transition active:scale-95"
+            aria-label="Project actions"
+          >
+            <MoreHorizontal className="h-6 w-6" />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onActionsClick}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-foreground transition active:scale-95"
-          aria-label="Project actions"
-        >
-          <MoreHorizontal className="h-6 w-6" />
-        </button>
-      </div>
+      ) : null}
 
-      <div className="min-h-0 flex-1 px-4 py-4">
+      <div
+        className={
+          showHeader ? "min-h-0 flex-1 px-4 py-4" : "min-h-0 flex-1 py-4"
+        }
+      >
         {hasPreview ? (
           <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-border/70 bg-card/80">
             <div className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
@@ -98,7 +107,13 @@ export function PreviewScreen({
       </div>
 
       {events.length > 0 ? (
-        <div className="mx-4 mb-3 max-h-28 overflow-auto rounded-2xl border border-border/60 bg-[oklch(0.13_0_0)] px-3 py-2 font-mono text-[11px] text-muted-foreground">
+        <div
+          className={
+            showHeader
+              ? "mx-4 mb-3 max-h-28 overflow-auto rounded-2xl border border-border/60 bg-[oklch(0.13_0_0)] px-3 py-2 font-mono text-[11px] text-muted-foreground"
+              : "mb-3 max-h-28 overflow-auto rounded-2xl border border-border/60 bg-[oklch(0.13_0_0)] px-3 py-2 font-mono text-[11px] text-muted-foreground"
+          }
+        >
           {events.slice(-4).map((event) => (
             <div key={event.id} className="flex gap-2 py-0.5">
               <span className="shrink-0 uppercase">{event.level}</span>
@@ -108,7 +123,7 @@ export function PreviewScreen({
         </div>
       ) : null}
 
-      <div className="pb-safe" />
+      {showHeader ? <div className="pb-safe" /> : null}
     </div>
   );
 }
@@ -134,8 +149,10 @@ function PreviewState({
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-secondary">
         {status === "starting" || status === "stopping" ? (
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        ) : status === "error" || status === "running" ? (
+        ) : status === "error" ? (
           <CircleAlert className="h-8 w-8 text-destructive" />
+        ) : status === "running" ? (
+          <Info className="h-8 w-8 text-muted-foreground" />
         ) : status === "stopped" ? (
           <Square className="h-8 w-8 text-muted-foreground" />
         ) : (
@@ -181,8 +198,8 @@ function previewCopy(
 
   if (status === "running") {
     return {
-      title: "Preview unavailable",
-      body: "No preview URL was recorded. Console has details.",
+      title: "Preview is still preparing",
+      body: "The run is active, but a preview URL is not ready yet. Check console output for progress.",
     };
   }
 

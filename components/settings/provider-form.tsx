@@ -109,30 +109,39 @@ export function ProviderForm({
           </p>
         </div>
         <div className="flex flex-col gap-4">
-          {PROVIDER_OPTIONS.map((provider) => (
-            <div
-              key={provider.id}
-              className="flex flex-col gap-3 rounded-md border border-border/60 bg-background/35 p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-sm font-medium">{provider.label}</div>
-                <span className="rounded-sm border border-border/60 bg-card/60 px-2 py-1 text-xs text-muted-foreground">
-                  {statuses[provider.id] ? "Saved key" : "No saved key"}
-                </span>
+          {PROVIDER_OPTIONS.map((provider) => {
+            const status = statuses[provider.id] ?? "missing";
+            const hasCredential = status === "valid";
+            const hasInvalidCredential = status === "invalid";
+            return (
+              <div
+                key={provider.id}
+                className="flex flex-col gap-3 rounded-md border border-border/60 bg-background/35 p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-medium">{provider.label}</div>
+                  <span className="rounded-sm border border-border/60 bg-card/60 px-2 py-1 text-xs text-muted-foreground">
+                    {hasCredential
+                      ? "Saved key"
+                      : hasInvalidCredential
+                        ? "Key needs replacement"
+                        : "No saved key"}
+                  </span>
+                </div>
+                <ProviderCredentialControl
+                  providerId={provider.id}
+                  providerLabel={provider.label}
+                  credentialStatus={status}
+                  onStatusChange={(providerId, hasCredential) => {
+                    setStatuses((current) => ({
+                      ...current,
+                      [providerId]: hasCredential ? "valid" : "missing",
+                    }));
+                  }}
+                />
               </div>
-              <ProviderCredentialControl
-                providerId={provider.id}
-                providerLabel={provider.label}
-                hasCredential={statuses[provider.id]}
-                onStatusChange={(providerId, hasCredential) => {
-                  setStatuses((current) => ({
-                    ...current,
-                    [providerId]: hasCredential,
-                  }));
-                }}
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

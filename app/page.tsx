@@ -39,7 +39,7 @@ export default async function Home() {
                 className="h-1.5 w-1.5 rounded-full bg-accent"
                 aria-hidden
               />
-              Early access &middot; v0.1
+              Early access &middot; beta
             </div>
             <h1 className="text-balance text-5xl font-semibold leading-[1.05] tracking-tight md:text-6xl">
               The desktop for turning ideas into code.
@@ -98,9 +98,7 @@ export default async function Home() {
 
         <footer className="flex items-center justify-between px-6 py-6 text-xs text-muted-foreground">
           <span>UDD &middot; Universal Dev Desktop</span>
-          <span className="font-mono">
-            single-user &middot; self-hosted-ready
-          </span>
+          <span className="font-mono">single-user beta</span>
         </footer>
       </div>
     </div>

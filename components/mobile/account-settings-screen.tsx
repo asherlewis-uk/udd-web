@@ -22,11 +22,15 @@ import {
   PROVIDERS,
   type ProviderId,
 } from "@/lib/ai/providers";
+import type { ProviderCredentialStatus } from "@/lib/ai/providers";
 import { cn } from "@/lib/utils";
 
 const PROVIDER_OPTIONS = getProviderOptions();
 
-export type MobileAccountProviderStatuses = Record<ProviderId, boolean>;
+export type MobileAccountProviderStatuses = Record<
+  ProviderId,
+  ProviderCredentialStatus
+>;
 
 export function MobileAccountSettingsScreen({
   email,
@@ -75,7 +79,10 @@ export function MobileAccountSettingsScreen({
   const providerDirty = selectedProvider !== savedProvider;
 
   const selectedConfig = PROVIDERS[selectedProvider];
-  const selectedHasCredential = credentialState[selectedProvider] ?? false;
+  const selectedCredentialStatus =
+    credentialState[selectedProvider] ?? "missing";
+  const selectedHasCredential = selectedCredentialStatus === "valid";
+  const selectedHasInvalidCredential = selectedCredentialStatus === "invalid";
   const providerReady = selectedHasCredential || environmentCredentialAvailable;
 
   function saveProfile() {
@@ -188,7 +195,10 @@ export function MobileAccountSettingsScreen({
                   {selectedConfig.modelDisplayName}
                 </div>
               </div>
-              <StatusPill ready={providerReady} />
+              <StatusPill
+                ready={providerReady}
+                invalid={selectedHasInvalidCredential}
+              />
             </div>
             <label className="flex flex-col gap-2">
               <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -214,7 +224,13 @@ export function MobileAccountSettingsScreen({
           <div className="grid grid-cols-2 gap-2 px-4 py-4 text-sm">
             <StatusTile
               label="Saved key"
-              value={selectedHasCredential ? "Present" : "Not saved"}
+              value={
+                selectedHasCredential
+                  ? "Present"
+                  : selectedHasInvalidCredential
+                    ? "Needs replacement"
+                    : "Not saved"
+              }
               active={selectedHasCredential}
             />
             <StatusTile
@@ -254,7 +270,9 @@ export function MobileAccountSettingsScreen({
           <div className="flex flex-col px-4 pb-4 pt-2">
             {PROVIDER_OPTIONS.map((provider, index) => {
               const config = PROVIDERS[provider.id];
-              const hasCredential = credentialState[provider.id] ?? false;
+              const credentialStatus = credentialState[provider.id] ?? "missing";
+              const hasCredential = credentialStatus === "valid";
+              const hasInvalidCredential = credentialStatus === "invalid";
               const isLast = index === PROVIDER_OPTIONS.length - 1;
               return (
                 <div
@@ -278,22 +296,28 @@ export function MobileAccountSettingsScreen({
                         "shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium",
                         hasCredential
                           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                          : "border-border/60 bg-background/50 text-muted-foreground",
+                          : hasInvalidCredential
+                            ? "border-destructive/30 bg-destructive/10 text-destructive"
+                            : "border-border/60 bg-background/50 text-muted-foreground",
                       )}
                     >
-                      {hasCredential ? "Saved" : "Missing"}
+                      {hasCredential
+                        ? "Saved"
+                        : hasInvalidCredential
+                          ? "Stale"
+                          : "Missing"}
                     </span>
                   </div>
                   <div>
                     <ProviderCredentialControl
                       providerId={provider.id}
                       providerLabel={config.label}
-                      hasCredential={hasCredential}
+                      credentialStatus={credentialStatus}
                       mobileLayout
                       onStatusChange={(providerId, nextHasCredential) => {
                         setCredentialState((current) => ({
                           ...current,
-                          [providerId]: nextHasCredential,
+                          [providerId]: nextHasCredential ? "valid" : "missing",
                         }));
                       }}
                     />
@@ -371,18 +395,20 @@ function SettingsGroup({
   );
 }
 
-function StatusPill({ ready }: { ready: boolean }) {
+function StatusPill({ ready, invalid }: { ready: boolean; invalid: boolean }) {
   return (
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium",
         ready
           ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-          : "border-border/60 bg-background/50 text-muted-foreground",
+          : invalid
+            ? "border-destructive/30 bg-destructive/10 text-destructive"
+            : "border-border/60 bg-background/50 text-muted-foreground",
       )}
     >
       {ready ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
-      {ready ? "Ready" : "Needs key"}
+      {ready ? "Ready" : invalid ? "Replace key" : "Needs key"}
     </span>
   );
 }

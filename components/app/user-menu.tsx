@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Settings, LogOut, User } from "lucide-react"
+import { LogOut, User } from "lucide-react"
 
 export function UserMenu({
   email,
@@ -44,12 +44,6 @@ export function UserMenu({
           <Link href="/settings">
             <User className="mr-2 h-4 w-4" />
             Account
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/settings">
-            <Settings className="mr-2 h-4 w-4" />
-            Settings
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

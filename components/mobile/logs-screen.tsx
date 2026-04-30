@@ -42,7 +42,7 @@ export function MobileLogsScreen({ events }: { events: MobileConsoleEvent[] }) {
       <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
         <span className="uppercase tracking-wide">Console</span>
         <span>
-          {events.length} event{events.length === 1 ? "" : "s"}
+          Showing last 200 events
         </span>
       </div>
       <div className="overflow-hidden rounded-3xl border border-border/60 bg-[oklch(0.12_0_0)]">

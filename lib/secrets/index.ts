@@ -4,6 +4,8 @@ import { encrypt, decrypt } from "./crypto"
 
 const TABLE = "user_secrets"
 
+export type SecretStatus = "missing" | "valid" | "invalid"
+
 export async function saveSecret(
   ownerId: string,
   kind: string,
@@ -38,16 +40,16 @@ export async function getSecret(
   try {
     return decrypt(data.encrypted_value as string)
   } catch {
-    console.log("[v0] getSecret: decrypt failed", { kind, name })
+    console.warn("[v0] getSecret: decrypt failed", { kind, name })
     return null
   }
 }
 
-export async function hasSecret(
+export async function getSecretStatus(
   ownerId: string,
   kind: string,
   name: string,
-): Promise<boolean> {
+): Promise<SecretStatus> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from(TABLE)
@@ -57,17 +59,25 @@ export async function hasSecret(
     .eq("name", name)
     .maybeSingle()
   if (error) {
-    console.log("[v0] hasSecret: lookup failed", { kind, name, error: error.message })
-    return false
+    console.warn("[v0] getSecretStatus: lookup failed", { kind, name, error: error.message })
+    return "missing"
   }
-  if (!data) return false
+  if (!data) return "missing"
   try {
     decrypt(data.encrypted_value as string)
-    return true
+    return "valid"
   } catch {
-    console.log("[v0] hasSecret: decrypt failed", { kind, name })
-    return false
+    console.warn("[v0] getSecretStatus: decrypt failed", { kind, name })
+    return "invalid"
   }
+}
+
+export async function hasSecret(
+  ownerId: string,
+  kind: string,
+  name: string,
+): Promise<boolean> {
+  return (await getSecretStatus(ownerId, kind, name)) === "valid"
 }
 
 export async function deleteSecret(

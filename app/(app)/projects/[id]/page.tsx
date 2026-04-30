@@ -194,8 +194,12 @@ export default async function WorkspacePage({
     runEventsQuery,
   ]);
   const environmentCredentialAvailable = hasGatewayEnvironmentCredential();
+  const activeProviderCredentialStatus =
+    credentialStatuses[providerConfig.id] ?? "missing";
   const activeProviderHasSavedCredential =
-    credentialStatuses[providerConfig.id] ?? false;
+    activeProviderCredentialStatus === "valid";
+  const activeProviderHasInvalidCredential =
+    activeProviderCredentialStatus === "invalid";
   const activeProvider: ActiveProviderInfo = {
     id: providerConfig.id,
     label: providerConfig.label,
@@ -208,6 +212,7 @@ export default async function WorkspacePage({
     label: providerConfig.label,
     model: providerConfig.model,
     hasSavedCredential: activeProviderHasSavedCredential,
+    hasInvalidCredential: activeProviderHasInvalidCredential,
     hasEnvironmentCredential: environmentCredentialAvailable,
     ready: activeProviderHasSavedCredential || environmentCredentialAvailable,
   };

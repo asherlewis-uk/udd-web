@@ -6,9 +6,10 @@ import {
   getProvider,
   isProviderId,
   PROVIDERS,
+  type ProviderCredentialStatus,
   type ProviderId,
 } from "@/lib/ai/providers";
-import { saveSecret, deleteSecret, hasSecret } from "@/lib/secrets";
+import { saveSecret, deleteSecret, getSecretStatus } from "@/lib/secrets";
 
 const PROVIDER_KEY_KIND = "ai_provider_key";
 const VALIDATION_TIMEOUT_MS = 10_000;
@@ -121,7 +122,7 @@ export async function deleteProviderCredential(
  * Safe to call from server components or actions that display provider readiness.
  */
 export async function getProviderCredentialStatuses(): Promise<
-  Record<ProviderId, boolean>
+  Record<ProviderId, ProviderCredentialStatus>
 > {
   const supabase = await createClient();
   const {
@@ -129,9 +130,9 @@ export async function getProviderCredentialStatuses(): Promise<
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  const result = {} as Record<ProviderId, boolean>;
+  const result = {} as Record<ProviderId, ProviderCredentialStatus>;
   for (const pid of Object.keys(PROVIDERS) as ProviderId[]) {
-    result[pid] = await hasSecret(user.id, PROVIDER_KEY_KIND, pid);
+    result[pid] = await getSecretStatus(user.id, PROVIDER_KEY_KIND, pid);
   }
   return result;
 }

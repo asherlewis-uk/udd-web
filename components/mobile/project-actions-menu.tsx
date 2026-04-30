@@ -33,6 +33,16 @@ import { deleteProject } from "@/app/actions/projects";
 import { startRunAction, stopRunAction } from "@/app/actions/run";
 import { cn } from "@/lib/utils";
 import type { MobileRunSession } from "./types";
+import type { RunStatus } from "@/lib/types";
+
+const RUN_STATUS_LABELS: Record<RunStatus, string> = {
+  idle: "Not started",
+  starting: "Starting…",
+  running: "Running",
+  stopping: "Stopping…",
+  stopped: "Stopped",
+  error: "Failed",
+};
 
 export function ProjectActionsMenu({
   isOpen,
@@ -68,8 +78,8 @@ export function ProjectActionsMenu({
             <div className="text-sm font-medium text-foreground">
               Project actions
             </div>
-            <div className="text-xs capitalize text-muted-foreground">
-              Preview: {status}
+            <div className="text-xs text-muted-foreground">
+              Preview: {RUN_STATUS_LABELS[status]}
             </div>
           </div>
           <button

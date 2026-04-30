@@ -11,11 +11,13 @@ import {
 } from "@/app/actions/secrets";
 import { cn } from "@/lib/utils";
 import type { ProviderId } from "@/lib/ai/providers";
+import type { ProviderCredentialStatus } from "@/lib/ai/providers";
 
 type ProviderCredentialControlProps = {
   providerId: ProviderId;
   providerLabel: string;
-  hasCredential: boolean;
+  hasCredential?: boolean;
+  credentialStatus?: ProviderCredentialStatus;
   disabled?: boolean;
   compact?: boolean;
   mobileLayout?: boolean;
@@ -27,6 +29,7 @@ export function ProviderCredentialControl({
   providerId,
   providerLabel,
   hasCredential,
+  credentialStatus,
   disabled,
   compact,
   mobileLayout,
@@ -34,21 +37,27 @@ export function ProviderCredentialControl({
   onStatusChange,
 }: ProviderCredentialControlProps) {
   const router = useRouter();
-  const [stored, setStored] = useState(hasCredential);
+  const resolvedCredentialStatus =
+    credentialStatus ?? (hasCredential ? "valid" : "missing");
+  const [status, setStatus] = useState<ProviderCredentialStatus>(
+    resolvedCredentialStatus,
+  );
   const [apiKey, setApiKey] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    setStored(hasCredential);
+    setStatus(resolvedCredentialStatus);
     setApiKey("");
     setMessage(null);
     setError(null);
-  }, [providerId, hasCredential]);
+  }, [providerId, resolvedCredentialStatus]);
 
   const trimmedKey = apiKey.trim();
   const canSave = trimmedKey.length >= 20 && !disabled && !isPending;
+  const stored = status === "valid";
+  const invalid = status === "invalid";
 
   const handleSave = () => {
     if (!canSave) return;
@@ -57,7 +66,7 @@ export function ProviderCredentialControl({
     startTransition(async () => {
       try {
         await saveProviderCredential(providerId, trimmedKey);
-        setStored(true);
+        setStatus("valid");
         setApiKey("");
         setMessage("Credential saved.");
         onStatusChange?.(providerId, true);
@@ -76,7 +85,7 @@ export function ProviderCredentialControl({
     startTransition(async () => {
       try {
         await deleteProviderCredential(providerId);
-        setStored(false);
+        setStatus("missing");
         setApiKey("");
         setMessage("Credential deleted.");
         onStatusChange?.(providerId, false);
@@ -105,11 +114,17 @@ export function ProviderCredentialControl({
             mobileLayout && !compact && "w-full",
             stored
               ? "text-emerald-600 dark:text-emerald-400"
-              : "text-muted-foreground",
+              : invalid
+                ? "text-destructive"
+                : "text-muted-foreground",
           )}
         >
           <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
-          {stored ? "BYOK ready" : "Credential missing"}
+          {stored
+            ? "BYOK ready"
+            : invalid
+              ? "Credential needs replacement"
+              : "Credential missing"}
         </span>
         {!compact || !stored ? (
           <div
@@ -151,11 +166,15 @@ export function ProviderCredentialControl({
                   "h-10 w-full justify-center rounded-full",
               )}
             >
-              {isPending ? "Saving..." : stored ? "Replace" : "Save key"}
+              {isPending
+                ? "Saving..."
+                : stored || invalid
+                  ? "Replace"
+                  : "Save key"}
             </Button>
           </div>
         ) : null}
-        {!compact && stored && allowDelete ? (
+        {!compact && (stored || invalid) && allowDelete ? (
           <Button
             type="button"
             size="sm"
@@ -176,6 +195,10 @@ export function ProviderCredentialControl({
         <span className="text-muted-foreground/75">
           Saved key is used for new {providerLabel} tasks.
         </span>
+      ) : compact && invalid ? (
+        <span className="text-destructive/90">
+          Saved {providerLabel} key could not be read. Replace it to use BYOK.
+        </span>
       ) : compact ? (
         <span className="text-muted-foreground/75">
           Save a key here to use {providerLabel} without leaving the cockpit.
@@ -184,7 +207,9 @@ export function ProviderCredentialControl({
         <span className="text-muted-foreground">
           {stored
             ? `${providerLabel} has a saved key. The value is never shown after save.`
-            : `No ${providerLabel} key is saved. Add one to use BYOK for this provider.`}
+            : invalid
+              ? `Saved ${providerLabel} key could not be read. Replace or delete it.`
+              : `No ${providerLabel} key is saved. Add one to use BYOK for this provider.`}
         </span>
       )}
       {message ? (

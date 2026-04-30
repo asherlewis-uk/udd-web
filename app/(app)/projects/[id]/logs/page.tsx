@@ -134,6 +134,13 @@ export default async function LogsPage({
         <SectionHeading
           title="Logs"
           description="Build and runtime output from past and current run sessions."
+          actions={
+            events.length > 0 ? (
+              <span className="text-xs text-muted-foreground">
+                Showing last 200 events
+              </span>
+            ) : null
+          }
         />
 
         {events.length === 0 ? (

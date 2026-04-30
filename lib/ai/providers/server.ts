@@ -6,9 +6,10 @@ import {
   isProviderId,
   PROVIDERS,
   type ProviderConfig,
+  type ProviderCredentialStatus,
   type ProviderId,
 } from "@/lib/ai/providers";
-import { getSecret, hasSecret } from "@/lib/secrets";
+import { getSecret, getSecretStatus } from "@/lib/secrets";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -62,10 +63,10 @@ export async function getCredentialForProvider(
 
 export async function getProviderCredentialStatusesForOwner(
   ownerId: string,
-): Promise<Record<ProviderId, boolean>> {
-  const result = {} as Record<ProviderId, boolean>;
+): Promise<Record<ProviderId, ProviderCredentialStatus>> {
+  const result = {} as Record<ProviderId, ProviderCredentialStatus>;
   for (const providerId of Object.keys(PROVIDERS) as ProviderId[]) {
-    result[providerId] = await hasSecret(
+    result[providerId] = await getSecretStatus(
       ownerId,
       "ai_provider_key",
       providerId,

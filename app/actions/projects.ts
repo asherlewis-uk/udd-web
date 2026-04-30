@@ -70,6 +70,7 @@ export async function updateProjectStatus(id: string, status: ProjectStatus) {
   if (error) throw new Error(error.message)
   revalidatePath("/projects")
   revalidatePath(`/projects/${id}`)
+  revalidatePath(`/projects/${id}/settings`)
 }
 
 export async function deleteProject(id: string) {

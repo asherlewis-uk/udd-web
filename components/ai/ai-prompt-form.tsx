@@ -11,11 +11,15 @@ import { createAITask } from "@/app/actions/ai";
 import { classifyPrompt } from "@/lib/ai/classify";
 import { cn } from "@/lib/utils";
 import { getProviderOptions, type ProviderId } from "@/lib/ai/providers";
+import type { ProviderCredentialStatus } from "@/lib/ai/providers";
 import type { AITaskKind } from "@/lib/ai/types";
 
 const PROVIDER_OPTIONS = getProviderOptions();
 
-export type ProviderCredentialStatuses = Record<ProviderId, boolean>;
+export type ProviderCredentialStatuses = Record<
+  ProviderId,
+  ProviderCredentialStatus
+>;
 
 export type ActiveProviderInfo = {
   id: ProviderId;
@@ -79,7 +83,10 @@ export function AIPromptForm({
   );
   const [credentialStatuses, setCredentialStatuses] =
     useState<ProviderCredentialStatuses>(
-      activeProvider?.credentialStatuses ?? { openai: false, anthropic: false },
+      activeProvider?.credentialStatuses ?? {
+        openai: "missing",
+        anthropic: "missing",
+      },
     );
 
   const draftOperation = draftPrompt.trim()
@@ -99,11 +106,16 @@ export function AIPromptForm({
   const selectedProvider =
     PROVIDER_OPTIONS.find((provider) => provider.id === selectedProviderId) ??
     PROVIDER_OPTIONS[0];
-  const hasSavedCredential = credentialStatuses[selectedProviderId] ?? false;
+  const selectedCredentialStatus =
+    credentialStatuses[selectedProviderId] ?? "missing";
+  const hasSavedCredential = selectedCredentialStatus === "valid";
+  const hasInvalidCredential = selectedCredentialStatus === "invalid";
   const providerReady =
     hasSavedCredential || !!activeProvider?.environmentCredentialAvailable;
   const providerReadinessCopy = hasSavedCredential
     ? "Stored credential will be used for new tasks."
+    : hasInvalidCredential
+      ? "Saved key could not be read. Replace or delete it before using BYOK."
     : activeProvider?.environmentCredentialAvailable
       ? "No saved key; UDD will use environment credentials unless you add one."
       : "Add a credential before submitting work to this provider.";
@@ -114,7 +126,7 @@ export function AIPromptForm({
   ) => {
     setCredentialStatuses((current) => ({
       ...current,
-      [providerId]: hasCredential,
+      [providerId]: hasCredential ? "valid" : "missing",
     }));
   };
 
@@ -228,7 +240,11 @@ export function AIPromptForm({
                 )}
                 aria-hidden
               />
-              {providerReady ? "Ready" : "Credential needed"}
+              {providerReady
+                ? "Ready"
+                : hasInvalidCredential
+                  ? "Credential stale"
+                  : "Credential needed"}
             </span>
           </div>
           <span className="text-muted-foreground/70">
@@ -238,7 +254,7 @@ export function AIPromptForm({
             <ProviderCredentialControl
               providerId={selectedProviderId}
               providerLabel={selectedProvider.label}
-              hasCredential={hasSavedCredential}
+              credentialStatus={selectedCredentialStatus}
               disabled={pending || !!busy}
               compact
               allowDelete={false}

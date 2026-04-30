@@ -93,10 +93,20 @@ export function ChatBuildScreen({
 function EmptyChatState() {
   return (
     <div className="flex h-full min-h-96 items-center justify-center text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full border border-border/60 bg-secondary/45">
-        <span className="text-lg font-semibold tracking-wide text-muted-foreground">
-          UDD
-        </span>
+      <div className="flex max-w-xs flex-col items-center gap-4">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full border border-border/60 bg-secondary/45">
+          <span className="text-lg font-semibold tracking-wide text-muted-foreground">
+            UDD
+          </span>
+        </div>
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold text-foreground">
+            Describe what you want to build
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Start with an app idea, feature, or change and UDD will turn it into saved files.
+          </p>
+        </div>
       </div>
     </div>
   );
