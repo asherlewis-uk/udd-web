@@ -1,416 +1,519 @@
 # Legion Deployment Runbook
 
+> Status: documentation-only. This runbook describes how the operator deploys
+> and operates UDD on the Legion host once the code-side prerequisites land.
+> Every operational procedure here assumes the **Docker Compose** runtime
+> defined in `docs/migration/docker-compose-architecture.md`. The previous
+> systemd-native model has been removed.
+>
+> Architectural rationale lives in
+> `docs/migration/docker-compose-architecture.md` and is referenced, not
+> re-litigated, here.
+
 ## 1. Scope and target topology
 
-This runbook defines the intended first self-hosted deployment path for UDD on the host named **Legion**. It is documentation-only and describes a future deployment shape; it does not assert that the current `main` branch is deployable in this shape yet.
+This runbook is the operator-facing procedure for first deployment, routine
+operations, and rollback of the UDD web application on the Legion host. It
+covers no other environment.
 
-Target topology:
+The target topology is fully specified in
+`docs/migration/docker-compose-architecture.md:12-49` (scope and non-goals),
+`docs/migration/docker-compose-architecture.md:51-79` (existing host
+topology), and `docs/migration/docker-compose-architecture.md:81-145`
+(network topology). In short:
 
-- **Host:** Legion runs the UDD web process and the local runtime/preview process helpers.
-- **Ingress:** Cloudflare Tunnel terminates public HTTPS and forwards to the local UDD app on Legion.
-- **App runtime:** Next.js self-hosted Node runtime, using a standalone build artifact once `next.config.mjs` is updated.
-- **Database:** PostgreSQL is reached through `DATABASE_URL`; Drizzle owns app queries and migrations after the migration work lands.
-- **Auth:** Better Auth owns app session tables in the application database, replacing Supabase Auth/RLS assumptions.
-- **AI:** AI provider configuration is direct and environment-driven through UDD default provider variables, not Vercel AI Gateway credentials.
-- **Preview URLs:** Saved preview URLs must be based on a configurable public or routable preview host, not browser-local loopback.
+- The UDD web application runs as a single container, `udd-web`, pulled from
+  the Forgejo container registry on Legion.
+- Public HTTPS terminates at the existing `cloudflared` container, which
+  forwards to the existing `caddy` container, which reverse-proxies to
+  `udd-web:3000` over the user-defined Docker bridge `legion-internal`.
+- Persistent state lives in the existing `postgres:16` container on the same
+  host, in a dedicated database (`udd_prod`) owned by a dedicated role
+  (`udd_app`).
+- UDD publishes no host port. The container is reachable only via the
+  bridge network.
+- UDD is stateless. There are no bind mounts and no named volumes attached
+  to `udd-web`.
 
-The recommended initial process model is **systemd running the Next standalone server**. Docker can be considered later as a hardening layer after the systemd path is proven.
+This runbook does **not** specify or rebuild any of the above; it consumes
+those decisions and turns them into operator commands.
 
 ## 2. Source baseline
 
-Current source-backed facts to account for before deployment:
+Source-backed facts about the current `main` branch that constrain this
+runbook.
 
-- Package scripts are `dev`, `build`, `start`, `lint`, and `typecheck` in `package.json:5-10`.
-- Current dependencies include `@supabase/ssr`, `@vercel/analytics`, and `ai` in `package.json:42-44`; the package manifest shown in `package.json:12-75` does not yet include Better Auth or Drizzle packages.
-- `next.config.mjs` currently contains `typescript.ignoreBuildErrors: false` and `images.unoptimized: true` only; there is no `output: 'standalone'` or `experimental.after` marker in the config object at `next.config.mjs:2-15`.
-- Long-running actions currently call `after()`: examples include `app/actions/ai.ts:117`, `app/actions/ai.ts:145`, `app/actions/ai.ts:249`, `app/actions/ai.ts:377`, `app/actions/run.ts:19`, and `app/actions/run.ts:109`.
-- The runtime preview URL is hardcoded to loopback at `lib/runtime/local-preview.ts:69`, emits copy that says `127.0.0.1` at `lib/runtime/local-preview.ts:129`, and binds child preview processes to `127.0.0.1` at `lib/runtime/local-preview.ts:466`, `lib/runtime/local-preview.ts:547`, and `lib/runtime/local-preview.ts:665`. This is correct for local binding but wrong for URLs shown to remote browsers through Cloudflare.
-- Vercel Analytics is imported and rendered from `app/layout.tsx:3` and `app/layout.tsx:42`; `@vercel/analytics` is also present in `package.json:43`.
-- Supabase environment reads remain active: `lib/supabase/client.ts:9-10`, `lib/supabase/server.ts:8-9`, `lib/supabase/proxy.ts:15-16`, `lib/supabase/service.ts:5-6`, and `components/auth/sign-up-form.tsx:35`.
-- Vercel AI Gateway assumptions remain active: provider comments and model strings are in `lib/ai/providers/index.ts:2-14` and `lib/ai/providers/index.ts:25-32`; gateway credential detection reads `AI_GATEWAY_API_KEY` or `VERCEL` at `lib/ai/providers/server.ts:78-79`; user-facing gateway failure copy is in `lib/ai/service.ts:33-37`.
-- Current SQL scripts still assume Supabase Auth/RLS: `scripts/001_init_schema.sql:3`, `scripts/001_init_schema.sql:14`, `scripts/001_init_schema.sql:21-35`, `scripts/001_init_schema.sql:43`, `scripts/001_init_schema.sql:59-73`, and `scripts/005_user_secrets.sql:9`, `scripts/005_user_secrets.sql:26-40`.
-- Repository-level deploy scaffolding was not found by the read-only audit used for this runbook: no root `Dockerfile`, `docker-compose.yml`, `docker-compose.yaml`, `vercel.json`, `.env.example`, `README.md`, `README`, or `.github/workflows` directory. No app-owned systemd unit or cloudflared config was found outside dependency files.
+- `next.config.mjs:1-17` does not contain `output: 'standalone'` or an
+  `experimental.after` marker.
+- Long-running server actions rely on `after()`; representative call
+  sites at `app/actions/ai.ts:117`, `app/actions/ai.ts:249`, and
+  `app/actions/run.ts:109`.
+- Vercel Analytics is imported and rendered from `app/layout.tsx:3` and
+  `app/layout.tsx:42`; `@vercel/analytics` is in `package.json:43`.
+- Supabase env reads are still active (e.g., `lib/supabase/client.ts:9-10`,
+  `lib/supabase/proxy.ts:15-16`); these will be removed by the cutover.
+- Vercel AI Gateway assumptions remain at
+  `lib/ai/providers/index.ts:2-14` and `lib/ai/service.ts:33-37`.
+- Repository-level Docker scaffolding (`Dockerfile`, `.dockerignore`,
+  `docker-compose.yml`, `app/api/health/route.ts`, Forgejo Actions
+  workflow) is not present and is enumerated as §3 prerequisites.
 
 ## 3. Required application changes before deployment
 
-These changes are required before using this runbook for a real Legion production deployment. They are **not implemented by this document**.
+These changes must land on `main` before this runbook is usable. They are
+not made by this document.
 
-1. Add Next standalone output to `next.config.mjs`:
-   - Future marker: `output: 'standalone'`.
-   - Current baseline: absent from `next.config.mjs:2-15`.
-2. Enable self-hosted `after()` support according to the migration spec:
-   - Future marker: `experimental: { after: true }`.
-   - Current callers rely on `after()` in `app/actions/ai.ts` and `app/actions/run.ts`.
-3. Remove Vercel Analytics:
-   - Delete the import/render path shown at `app/layout.tsx:3` and `app/layout.tsx:42`.
-   - Remove `@vercel/analytics` from `package.json` during the dependency migration.
-4. Replace hardcoded preview URL host construction with `UDD_PREVIEW_HOST`:
-   - Keep preview processes bound to localhost unless a later security review changes that.
-   - Only the externally presented URL should use `UDD_PREVIEW_HOST`.
-5. Remove Supabase env/client dependency:
-   - Replace Supabase server, browser, proxy, and service clients with Better Auth plus Drizzle/Postgres paths.
-   - Remove the Supabase redirect env read in signup.
-6. Add Better Auth and Drizzle runtime wiring:
-   - Add `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, and `DATABASE_URL` consumers.
-   - Add app-owned Better Auth tables and Drizzle schema/migrations as specified in `docs/migration/drizzle-schema.md` and `docs/migration/better-auth-integration.md`.
-7. Replace Vercel AI Gateway env assumptions:
-   - Use direct configurable provider vars: `UDD_DEFAULT_AI_BASE_URL`, `UDD_DEFAULT_AI_MODEL`, `UDD_DEFAULT_AI_API_KEY`, and `UDD_AI_PROVIDER`.
-   - Remove `AI_GATEWAY_API_KEY` and `VERCEL` as application-level provider readiness inputs.
+The Docker-specific subset is enumerated in
+`docs/migration/docker-compose-architecture.md:694-733`. In summary:
 
-## 4. Environment model
+1. Add `output: 'standalone'` to `next.config.mjs` (current state at
+   `next.config.mjs:1-17` does not have it; build-time requirement is
+   recorded at `docs/migration/env-lockdown.md:54`).
+2. Add an `app/api/health/route.ts` handler matching the contract at
+   `docs/migration/docker-compose-architecture.md:518-571`. It must return
+   `200` with `{ "ok": true }`, must not touch the database, and must not
+   call any auth or AI surface.
+3. Add a root `Dockerfile` matching
+   `docs/migration/docker-compose-architecture.md:147-228`.
+4. Add a `.dockerignore` excluding at minimum `node_modules`, `.next`,
+   `.git`, and `.env*`.
+5. Add a Forgejo Actions workflow that builds the image and pushes both
+   `udd-web:<git-sha>` (immutable) and `udd-web:prod` (moving pointer)
+   per `docs/migration/docker-compose-architecture.md:227-264`. Status:
+   proposed, not yet implemented.
 
-Intended Legion production env file shape, with placeholder values only:
+The broader application-level migration items (Vercel Analytics removal,
+Supabase removal, Better Auth + Drizzle wiring, AI Gateway removal,
+preview-host rewrite) are owned by the cutover runbook and the env-lockdown
+doc, not by this runbook. They are listed at
+`docs/migration/env-lockdown.md:38-48` (live variables that imply new
+wiring) and `docs/migration/env-lockdown.md:27-36` (variables that must
+be removed).
 
-```sh
-NODE_ENV=production
-PATH=/usr/local/bin:/usr/bin:/bin
+## 4. Host prerequisites
 
-BETTER_AUTH_SECRET=<generated-auth-secret>
-BETTER_AUTH_URL=https://<udd-public-hostname>
-DATABASE_URL=postgresql://<user>:<password>@<postgres-host>:5432/<database>
+The following must already be true on Legion before this runbook is run.
+None of them are owned by this document; they are owned by the operator.
 
-UDD_PREVIEW_HOST=https://<preview-public-hostname-or-routable-origin>
-UDD_SECRET_KEY=<existing-udd-encryption-key>
-UDD_AI_PROVIDER=<default-provider-id>
-UDD_DEFAULT_AI_BASE_URL=http://localhost:11434/v1
-UDD_DEFAULT_AI_MODEL=<model-id>
-UDD_DEFAULT_AI_API_KEY=<provider-api-key-or-local-placeholder>
-```
+- **Docker Engine and the Compose plugin** are installed on the host.
+  `docker compose version` returns a current version.
+- **The `legion-internal` user-defined Docker bridge network exists** as an
+  external network. See
+  `docs/migration/docker-compose-architecture.md:81-145` for its role.
+  Verify with `docker network ls | grep legion-internal`.
+- **The existing `caddy`, `cloudflared`, and `postgres:16` containers are
+  running** and are members of `legion-internal`. The lifecycle of those
+  containers is owned by the operator's existing stack, **not by this
+  runbook**.
+- **The Forgejo container registry on Legion is reachable** from the host
+  for pulling images. `docker login <forgejo-registry-host>` succeeds.
+- **A `udd` service user exists on the host with `docker` group
+  membership.** This user owns `/srv/udd/.env.production` per
+  `docs/migration/docker-compose-architecture.md:492-513`.
 
-Deprecated or explicitly excluded from Legion production after the migration:
+The host does **not** need Node, pnpm, the PostgreSQL client tools, or any
+systemd unit file for the UDD app. Image builds happen in CI; database
+operations happen via `docker exec` against the existing Postgres
+container; the application runs entirely inside its container.
 
-```sh
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL=
-AI_GATEWAY_API_KEY=
-VERCEL=
-```
+`cloudflared` and `caddy` are operated as containers by the existing host
+stack. Their ingress and reverse-proxy contracts are described in §7;
+their lifecycle is not in scope here.
 
-Rules:
+## 5. Environment model
 
-- Do not store real secret values in source control, docs, shell history, or chat transcripts.
-- `BETTER_AUTH_URL` must equal the public HTTPS origin served through Cloudflare Tunnel.
-- `UDD_PREVIEW_HOST` must be the public or otherwise browser-routable preview origin users can actually load.
-- `PATH` must include the Node and package-manager binaries used by the systemd service.
+The application reads configuration from a single host file consumed by
+Compose's `env_file:` directive. The authoritative variable list lives in
+`docs/migration/env-lockdown.md:1-57`; this runbook does not duplicate it.
+Specifically:
+
+- Live variables in production: `docs/migration/env-lockdown.md:38-48`.
+- Retired variables that must not appear: `docs/migration/env-lockdown.md:27-36`.
+- Variables that survive unchanged from the current source:
+  `docs/migration/env-lockdown.md:18-25`.
+
+### 5.1 File location and ownership
+
+Per `docs/migration/docker-compose-architecture.md:492-513`:
+
+| Property | Value                                |
+| -------- | ------------------------------------ |
+| Path     | `/srv/udd/.env.production`           |
+| Mode     | `0640`                               |
+| Owner    | `udd` (user)                         |
+| Group    | `docker` (group)                     |
+| Read by  | The `udd-web` container via `env_file:` |
+
+The `PATH=` variable that appeared in the previous, systemd-shaped version
+of this runbook is no longer required: container images bake a fixed
+`PATH` at build time, so the env file does not need to set it.
+
+### 5.2 Rules
+
+- `BETTER_AUTH_URL` equals the public HTTPS origin served through Cloudflare
+  Tunnel: `https://udd.<apex>`. See
+  `docs/migration/env-lockdown.md:43`.
+- `DATABASE_URL` resolves the database host as `postgres` (Docker DNS on
+  `legion-internal`). See `docs/migration/env-lockdown.md:44` for the
+  canonical shape.
+- `UDD_PREVIEW_HOST` is the operator-provided public or routable preview
+  origin. See `docs/migration/env-lockdown.md:45`.
 - `NODE_ENV` is fixed to `production` for the deployed app process.
+- Real secret values never appear in source control, in this runbook, in
+  shell history, or in chat transcripts.
 
-## 5. Build artifact model
+## 6. Image build and registry
 
-Current state: `next.config.mjs` does not yet produce a standalone artifact. The following model applies after the required application changes land.
+The host does not build the image. Building happens in CI and the host
+**pulls** by SHA-pinned tag.
 
-Intended build sequence:
+- Dockerfile shape: `docs/migration/docker-compose-architecture.md:147-228`.
+- Registry path and tagging contract:
+  `docs/migration/docker-compose-architecture.md:227-264`.
 
-```sh
-cd <repo-root>
-pnpm install --frozen-lockfile
-pnpm build
-```
+In summary:
 
-Expected artifact layout after `output: 'standalone'`:
+- Multi-stage build on `node:lts-alpine`; the runtime stage contains only
+  the Next.js standalone output, `.next/static/`, and `public/`. No source,
+  no dev dependencies, no `pnpm`.
+- Each successful CI build produces and pushes **two tags atomically**:
+  - `<forgejo-registry-host>/<owner>/udd-web:<git-sha>` — immutable.
+  - `<forgejo-registry-host>/<owner>/udd-web:prod` — moving pointer for
+    humans only; never referenced in compose.
+- `latest` is forbidden as an image tag in compose.
+- The `docker-compose.yml` on Legion always pins to `<git-sha>`. Rollback
+  is a one-line edit (see §12).
 
-- `.next/standalone/` contains the deployable Node server and traced server dependencies.
-- `.next/static/` contains static Next build assets and must be copied or kept beside the standalone server according to Next standalone deployment rules.
-- `public/` must be deployed beside the server when the repository contains public assets.
-
-Expected launch command template:
-
-```sh
-cd <repo-root>
-NODE_ENV=production HOSTNAME=127.0.0.1 PORT=3000 node .next/standalone/server.js
-```
-
-The current `pnpm start` script runs `next start` (`package.json:8`). After standalone output lands, production operations should prefer the standalone `server.js` launch path over `next start`.
-
-## 6. Process model
-
-Recommended initial model: one systemd unit runs the Next standalone server as a non-root service user. This is a documentation template only.
-
-Template unit:
-
-```ini
-[Unit]
-Description=UDD web app
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=<legion-service-user>
-Group=<legion-service-group>
-WorkingDirectory=<repo-root>
-EnvironmentFile=<absolute-path-to-env-production>
-Environment=NODE_ENV=production
-Environment=HOSTNAME=127.0.0.1
-Environment=PORT=3000
-ExecStart=/usr/bin/env node .next/standalone/server.js
-Restart=on-failure
-RestartSec=5
-TimeoutStopSec=30
-KillSignal=SIGTERM
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Operational expectations:
-
-- The service listens only on `127.0.0.1:3000` unless a later networking review approves another bind address.
-- Cloudflare Tunnel is the public ingress path.
-- The service user must be able to read the build artifact and env file, but the env file should not be world-readable.
-- Runtime preview child processes remain bounded by the application runtime controls.
+The Forgejo Actions workflow that produces these tags is one of the §3
+prerequisites; until it lands, builds happen out of band on a developer
+workstation that pushes to the same registry.
 
 ## 7. Cloudflare Tunnel model
 
-Cloudflare Tunnel provides public HTTPS termination and forwards to the local app listener on Legion.
+This runbook describes only the **contract** the UDD stack relies on. The
+cloudflared container itself is owned by the operator's existing stack;
+its config files, tunnel credentials, and lifecycle are out of scope here.
 
-Template tunnel ingress snippet:
+Required contract:
 
-```yaml
-tunnel: <cloudflare-tunnel-id>
-credentials-file: <absolute-path-to-cloudflared-credentials-json>
+- The hostname `udd.<apex>` resolves through the existing cloudflared
+  container.
+- Cloudflared forwards `udd.<apex>` traffic to the existing caddy container
+  on `legion-internal`. The assumed mechanism is the wildcard ingress rule
+  `*.<apex> → caddy` already documented in
+  `docs/migration/docker-compose-architecture.md:477-490`. If that
+  wildcard rule is absent, the operator adds an explicit `udd.<apex>`
+  ingress entry to cloudflared's config; this runbook does not specify
+  that change.
+- Caddy reverse-proxies `udd.<apex>` to `udd-web:3000` over
+  `legion-internal`. The site-block contract is documented at
+  `docs/migration/docker-compose-architecture.md:436-475`. The actual
+  Caddyfile lives in the caddy container's mounted config and is operator-
+  owned; this runbook does not include the snippet.
+- TLS terminates at Caddy (downstream of cloudflared). The hop from Caddy
+  to `udd-web:3000` is plain HTTP inside the bridge network, which is
+  correct for a layer-7 reverse proxy on a private network.
 
-ingress:
-  - hostname: <udd-public-hostname>
-    service: http://127.0.0.1:3000
-  - hostname: <preview-public-hostname>
-    service: http://127.0.0.1:<preview-port-or-router-port>
-  - service: http_status:404
-```
-
-Model requirements:
-
-- Public app users browse to `https://<udd-public-hostname>`.
-- `BETTER_AUTH_URL` equals `https://<udd-public-hostname>` exactly.
-- The local app service remains `http://127.0.0.1:3000` behind the tunnel.
-- `UDD_PREVIEW_HOST` uses the public or routable preview origin documented for runtime previews.
-- If preview traffic is routed through Cloudflare, the preview route must point at the real preview router or bounded local preview port architecture implemented by source at that time.
-
-Cloudflared service template, if managed by systemd:
-
-```ini
-[Unit]
-Description=Cloudflare Tunnel for UDD
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=<cloudflared-user>
-ExecStart=/usr/bin/cloudflared tunnel --config <absolute-path-to-cloudflared-config.yml> run
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
+The operator must ensure the reverse-proxy rule exists in caddy before
+attempting public verification in §10.
 
 ## 8. Database model
 
-Legion production uses PostgreSQL on or near Legion, reached with `DATABASE_URL`.
+UDD reuses the existing `postgres:16` container on Legion. UDD does not
+manage that container. UDD owns exactly one role and one database inside
+it: role `udd_app`, database `udd_prod`. Provisioning is a one-time
+operation governed by the SQL block at
+`docs/migration/docker-compose-architecture.md:381-434` (specifically the
+`CREATE ROLE` / `CREATE DATABASE` block in §7.1 of that document).
 
 Required model after migration:
 
 - Drizzle and postgresjs use `DATABASE_URL` for app queries and migrations.
-- Migrations are explicit, reviewed, and run as a deploy step before starting code that depends on them.
-- Better Auth owns app auth tables in the same PostgreSQL database unless a future migration explicitly separates them.
-- App tables reference Better Auth user IDs, not `auth.users`.
-- Supabase RLS policies and `auth.uid()` checks do not remain in the post-migration production schema.
-- A database backup is taken before every schema migration and before the first production cutover.
+- Migrations are explicit, reviewed, and run as a deploy step before
+  starting code that depends on them.
+- Better Auth owns app auth tables in the same PostgreSQL database. App
+  tables reference Better Auth user IDs, not `auth.users`.
+- Supabase RLS policies and `auth.uid()` checks are removed from the
+  post-migration production schema.
+- A database backup is taken before every schema migration and before the
+  first production cutover.
 
-The current SQL baseline is Supabase-shaped, as shown by `auth.users` references and RLS policies in `scripts/001_init_schema.sql` and `scripts/005_user_secrets.sql`; those scripts are not the target production schema after the migration.
+The current SQL baseline is Supabase-shaped (see
+`scripts/001_init_schema.sql:21-35` and `scripts/005_user_secrets.sql:26-40`)
+and is not the target production schema.
 
 ## 9. Secrets and backup model
 
-Secrets:
+### 9.1 Secrets
 
-- Store the Legion production environment file outside the repository, for example `<secure-config-dir>/udd.env.production`.
-- Set ownership to the service user or root-controlled deployment group.
-- Set permissions to `0640` or stricter, depending on the service user model.
-- Never commit env files or real secret values.
+- Store the production environment file at `/srv/udd/.env.production`,
+  ownership `udd:docker`, mode `0640`, per
+  `docs/migration/docker-compose-architecture.md:492-513`.
+- Never commit env files or real secret values to the repository.
+- `BETTER_AUTH_SECRET` signs auth/session material; rotation can invalidate
+  existing sessions unless a staged rotation mechanism is implemented.
+- `UDD_SECRET_KEY` protects app-managed credential encryption (see
+  `docs/migration/env-lockdown.md:14`); rotating it without re-encrypting
+  stored secrets makes existing encrypted provider keys unreadable.
+- `UDD_DEFAULT_AI_API_KEY` may be a real provider secret for hosted
+  providers; treat it as secret even when the local Ollama placeholder is
+  non-sensitive (see `docs/migration/env-lockdown.md:48`).
 
-Secret caveats:
+### 9.2 Backups
 
-- `BETTER_AUTH_SECRET` signs auth/session material. Rotation can invalidate or force renewal of existing sessions unless a staged rotation mechanism is implemented.
-- `UDD_SECRET_KEY` protects app-managed credential encryption. Rotating it without re-encrypting stored secrets can make existing encrypted provider keys unreadable.
-- `UDD_DEFAULT_AI_API_KEY` may be a real provider secret for hosted providers. Treat it as secret even when the local Ollama placeholder is non-sensitive.
+Database backups run via `docker exec` against the existing Postgres
+container. Command shape only — the real superuser name is operator-
+provided:
 
-Backups:
+```sh
+docker exec postgres pg_dump \
+    -U <postgres-superuser> \
+    -d udd_prod \
+    --format=custom \
+    --file=/var/lib/postgresql/backups/udd-before-<release-id>.dump
+```
 
-- Take a PostgreSQL logical backup before first deploy, before each migration, and before rollback attempts involving schema changes.
-- Back up the production env file separately in an encrypted operator-controlled store.
-- Capture the previous git commit, build artifact, env file version, migration version, and Cloudflare Tunnel config version for rollback snapshots.
+Then copy the dump off the container into operator-managed backup storage:
+
+```sh
+docker cp postgres:/var/lib/postgresql/backups/udd-before-<release-id>.dump <backup-dir>/
+```
+
+The exact backup destination, retention period, encryption method, and
+restore-rehearsal cadence are operator-owned (see §15).
+
+There is no in-container persistence outside the database; the application
+container is stateless per
+`docs/migration/docker-compose-architecture.md:81-145` and the explicit
+non-feature note in §6.3 of that document.
 
 ## 10. First deployment procedure
 
-This procedure is intended for the future migration-complete branch, not the current baseline.
+Concrete numbered steps for the operator on Legion. Each step is
+runtime-Docker; no `pnpm`, no `node`, no `systemctl` for the UDD app.
 
-1. Preflight source and host state:
-
-   ```sh
-   cd <repo-root>
-   git status --short
-   git rev-parse --short HEAD
-   node --version
-   pnpm --version
-   systemctl status <udd-service-name>
-   systemctl status <cloudflared-service-name>
-   ```
-
-2. Check out or update the target release:
+1. **Preflight: confirm host state.**
 
    ```sh
-   cd <repo-root>
-   git fetch --all --prune
-   git checkout <release-commit-or-branch>
-   git reset --hard <release-commit>
+   docker network ls | grep legion-internal
+   docker ps --format '{{.Names}}' | grep -E '^(caddy|cloudflared|postgres)$'
+   docker login <forgejo-registry-host>
    ```
 
-3. Install dependencies without changing the lockfile:
+2. **Provision the application database role and database** (run once,
+   ever — skip if already done):
+
+   Open a `psql` shell inside the existing Postgres container:
 
    ```sh
-   pnpm install --frozen-lockfile
+   docker exec -it postgres psql -U <postgres-superuser>
    ```
 
-4. Build the app:
+   Then run the SQL block from
+   `docs/migration/docker-compose-architecture.md:381-434` (§7.1). It
+   creates the `udd_app` role with no superuser/createdb/createrole, the
+   `udd_prod` database owned by `udd_app`, and the `pgcrypto` extension.
+
+3. **Install the production environment file** on the host:
 
    ```sh
-   pnpm build
-   test -f .next/standalone/server.js
-   test -d .next/static
+   install -m 0640 -o udd -g docker \
+       <prepared-env-file> \
+       /srv/udd/.env.production
    ```
 
-5. Prepare or update the production env file:
+4. **Place the compose file** at the canonical path — filesystem-as-source-
+   of-truth per `docs/migration/docker-compose-architecture.md:608-645`:
 
    ```sh
-   install -m 0640 -o <service-user> -g <service-group> <prepared-env-file> <absolute-path-to-env-production>
+   install -m 0644 \
+       <prepared-compose> \
+       /srv/udd/docker-compose.yml
    ```
 
-6. Back up the database before migrations:
+5. **Pull the SHA-pinned image:**
 
    ```sh
-   pg_dump "$DATABASE_URL" --format=custom --file=<backup-dir>/udd-before-<release-id>.dump
+   docker compose -f /srv/udd/docker-compose.yml pull udd-web
    ```
 
-7. Run migrations with the migration command chosen by the implementation branch:
+6. **Run application database migrations.** The exact command is provided
+   by the implementation branch; until then it remains a placeholder:
 
    ```sh
    <migration-command-using-DATABASE_URL>
    ```
 
-8. Start or restart the app service:
+   The migration command must read `DATABASE_URL` from the same env file
+   used by the app (or be invoked via a one-shot Docker container that
+   mounts `/srv/udd/.env.production`).
+
+7. **Bring the stack up:**
 
    ```sh
-   systemctl daemon-reload
-   systemctl enable <udd-service-name>
-   systemctl restart <udd-service-name>
-   systemctl status <udd-service-name> --no-pager
+   docker compose -f /srv/udd/docker-compose.yml up -d udd-web
    ```
 
-9. Ensure Cloudflare Tunnel is running:
+8. **Caddy reverse-proxy rule.** Confirm caddy already routes `udd.<apex>`
+   to `udd-web:3000` per §7. If the rule has just been added by the
+   operator, reload caddy (the exact reload mechanism depends on how the
+   caddy container is launched and is operator-owned).
+
+9. **Verify locally** on the host:
 
    ```sh
-   systemctl enable <cloudflared-service-name>
-   systemctl restart <cloudflared-service-name>
-   systemctl status <cloudflared-service-name> --no-pager
+   docker compose -f /srv/udd/docker-compose.yml ps
+   docker compose -f /srv/udd/docker-compose.yml logs --tail=200 udd-web
+   docker exec udd-web wget -qO- http://localhost:3000/api/health
    ```
 
-10. Verify local and public health:
+   The `ps` output must show `udd-web` as `running` and healthy; the
+   logs must show the Next standalone server bound to `0.0.0.0:3000`; the
+   health probe must return `{"ok":true}` with status 200.
 
-   ```sh
-   curl -fsS http://127.0.0.1:3000/
-   curl -fsS https://<udd-public-hostname>/
-   curl -fsS https://<udd-public-hostname>/auth/login
-   ```
+10. **Verify publicly** through Cloudflare Tunnel:
 
-11. Run the smoke list in Section 13 before declaring the deployment complete.
+    ```sh
+    curl -fsS https://udd.<apex>/
+    curl -fsS https://udd.<apex>/auth/login
+    ```
+
+11. **Run the smoke list in §13** before declaring deployment complete.
 
 ## 11. Routine operations
 
-Routine deploy update:
+All routine operations use `docker compose` against
+`/srv/udd/docker-compose.yml`. The host runs only Docker.
+
+### 11.1 Deploy update (new image SHA)
 
 ```sh
-cd <repo-root>
-git fetch --all --prune
-git checkout <release-commit-or-branch>
-git reset --hard <release-commit>
-pnpm install --frozen-lockfile
-pnpm build
-pg_dump "$DATABASE_URL" --format=custom --file=<backup-dir>/udd-before-<release-id>.dump
+# 1. Edit /srv/udd/docker-compose.yml in place: bump the image tag's
+#    <git-sha> to the new release SHA. Filesystem-as-source-of-truth.
+# 2. Pull and recreate.
+docker compose -f /srv/udd/docker-compose.yml pull udd-web
+docker compose -f /srv/udd/docker-compose.yml up -d udd-web
+docker compose -f /srv/udd/docker-compose.yml ps
+```
+
+If the new release ships a database migration, run §10 step 6 between
+the pull and the `up -d`.
+
+### 11.2 Log inspection
+
+```sh
+# Application logs (last 200 lines, follow):
+docker compose -f /srv/udd/docker-compose.yml logs -f --tail=200 udd-web
+
+# Daemon-level inspection (Docker engine itself, not the UDD app):
+journalctl -u docker -n 200 --no-pager
+```
+
+The `[v0]` server-diagnostic prefix used in application code remains the
+in-process convention.
+
+### 11.3 Environment file update
+
+```sh
+install -m 0640 -o udd -g docker \
+    <prepared-env-file> \
+    /srv/udd/.env.production
+docker compose -f /srv/udd/docker-compose.yml up -d --force-recreate udd-web
+```
+
+`env_file:` is read at container start, so a recreate is required for new
+values to take effect.
+
+### 11.4 Migration-only operation
+
+```sh
+# Backup first.
+docker exec postgres pg_dump -U <postgres-superuser> -d udd_prod \
+    --format=custom \
+    --file=/var/lib/postgresql/backups/udd-before-migration-<migration-id>.dump
+
+# Run the migration (placeholder until implementation branch defines it).
 <migration-command-using-DATABASE_URL>
-systemctl restart <udd-service-name>
-systemctl status <udd-service-name> --no-pager
+
+# Recreate the app so any new code paths in the running image pick up the
+# new schema. Skip this if the running image already contains code that
+# expects the new schema.
+docker compose -f /srv/udd/docker-compose.yml up -d --force-recreate udd-web
 ```
 
-Logs and status:
+### 11.5 Backup operation
 
 ```sh
-journalctl -u <udd-service-name> -n 200 --no-pager
-journalctl -u <cloudflared-service-name> -n 200 --no-pager
-systemctl status <udd-service-name> --no-pager
-systemctl status <cloudflared-service-name> --no-pager
-```
-
-Backup operation:
-
-```sh
-pg_dump "$DATABASE_URL" --format=custom --file=<backup-dir>/udd-<timestamp>.dump
-install -m 0600 <absolute-path-to-env-production> <encrypted-env-backup-path>
-```
-
-Env update operation:
-
-```sh
-install -m 0640 -o <service-user> -g <service-group> <prepared-env-file> <absolute-path-to-env-production>
-systemctl restart <udd-service-name>
-```
-
-Migration-only operation:
-
-```sh
-pg_dump "$DATABASE_URL" --format=custom --file=<backup-dir>/udd-before-migration-<migration-id>.dump
-<migration-command-using-DATABASE_URL>
-systemctl restart <udd-service-name>
+docker exec postgres pg_dump -U <postgres-superuser> -d udd_prod \
+    --format=custom \
+    --file=/var/lib/postgresql/backups/udd-<timestamp>.dump
+docker cp postgres:/var/lib/postgresql/backups/udd-<timestamp>.dump <backup-dir>/
+install -m 0600 /srv/udd/.env.production <encrypted-env-backup-path>
 ```
 
 ## 12. Rollback procedure
 
-Rollback inputs:
+Application rollback is governed by the contract at
+`docs/migration/docker-compose-architecture.md:647-692`. Because the
+compose file pins to `<git-sha>` and the application is stateless,
+rollback is a one-line edit followed by a recreate.
 
-- Previous git commit or build artifact identifier.
-- Previous env file version.
-- Previous Cloudflare Tunnel config version, if ingress changed.
-- Database backup from before the migration or deploy.
-- Migration list applied during the failed deployment.
+### 12.1 Rollback inputs
 
-Procedure:
+- Previous git SHA still present in the Forgejo registry.
+- Previous `/srv/udd/.env.production`, if env values changed.
+- Pre-migration database backup (from §11.4 or §11.5), if a migration
+  ran.
 
-```sh
-cd <repo-root>
-git checkout <previous-release-commit>
-pnpm install --frozen-lockfile
-pnpm build
-install -m 0640 -o <service-user> -g <service-group> <previous-env-file> <absolute-path-to-env-production>
-systemctl restart <udd-service-name>
-systemctl status <udd-service-name> --no-pager
-```
+### 12.2 Procedure
 
-Database caveat:
+1. **Identify the previous SHA.** In order of preference:
+   - Forgejo registry image list for `<forgejo-registry-host>/<owner>/udd-web`
+     (the SHA tags are rollback candidates; the moving `prod` tag is not).
+   - `docker images <forgejo-registry-host>/<owner>/udd-web` on the host.
+   - Git history of `main`.
 
-- If the failed release ran schema migrations, code rollback alone may be unsafe.
-- Roll back the database only with an explicit restore plan and a backup taken before the migration.
+2. **Edit `/srv/udd/docker-compose.yml`** in place, replacing the failed
+   `<git-sha>` with the previous one. Diff shape:
+
+   ```diff
+   -    image: <forgejo-registry-host>/<owner>/udd-web:<failed-sha>
+   +    image: <forgejo-registry-host>/<owner>/udd-web:<previous-release-commit>
+   ```
+
+3. **Restore the previous env file**, if it changed:
+
+   ```sh
+   install -m 0640 -o udd -g docker \
+       <previous-env-file> \
+       /srv/udd/.env.production
+   ```
+
+4. **Pull and recreate:**
+
+   ```sh
+   docker compose -f /srv/udd/docker-compose.yml pull udd-web
+   docker compose -f /srv/udd/docker-compose.yml up -d udd-web
+   docker compose -f /srv/udd/docker-compose.yml ps
+   ```
+
+5. **Verify** with §13.
+
+No source-tree, build-host, or service-manager steps are required: the
+image tag in the compose file is the only artifact that needs to change.
+
+### 12.3 Database caveat
+
+If the failed release ran schema migrations, code rollback alone may be
+unsafe:
+
+- Roll back the database only with an explicit restore plan and a backup
+  taken before the migration.
 - Do not run old code against a newer incompatible schema.
+- Schema-aware rollback is governed by the cutover runbook's rollback
+  procedure, not by this runbook.
 
-Tunnel rollback:
-
-```sh
-install -m 0644 <previous-cloudflared-config> <absolute-path-to-cloudflared-config.yml>
-systemctl restart <cloudflared-service-name>
-systemctl status <cloudflared-service-name> --no-pager
-```
-
-Unsafe rollback conditions:
+### 12.4 Unsafe rollback conditions
 
 - No pre-migration database backup exists.
 - The new release wrote data that the old release cannot read.
@@ -418,39 +521,42 @@ Unsafe rollback conditions:
 
 ## 13. Health checks and smoke tests
 
-Local checks from Legion:
+### 13.1 Local checks (on the Legion host)
 
 ```sh
-curl -fsS http://127.0.0.1:3000/
-curl -fsS http://127.0.0.1:3000/auth/login
+docker compose -f /srv/udd/docker-compose.yml ps
+docker exec udd-web wget -qO- http://localhost:3000/api/health
+docker exec udd-web wget -qO- http://localhost:3000/auth/login >/dev/null
 ```
 
-Public checks through Cloudflare:
+The `ps` output must show `udd-web` as `running` and `healthy`. The
+healthcheck contract is documented at
+`docs/migration/docker-compose-architecture.md:515-571`.
+
+### 13.2 Public checks through Cloudflare
 
 ```sh
-curl -fsS https://<udd-public-hostname>/
-curl -fsS https://<udd-public-hostname>/auth/login
+curl -fsS https://udd.<apex>/
+curl -fsS https://udd.<apex>/auth/login
+curl -fsS https://udd.<apex>/api/health
 ```
 
-Browser smoke paths:
+### 13.3 Browser smoke paths
 
 - `/` loads without a server error.
-- `/auth/login` loads and can start the Better Auth email/password sign-in flow.
-- `/projects` redirects unauthenticated users to login and loads for an authenticated user.
+- `/auth/login` loads and can start the Better Auth email/password sign-in
+  flow.
+- `/projects` redirects unauthenticated users to login and loads for an
+  authenticated user.
 - `/projects/new` loads for an authenticated user.
 - `/projects/[id]` loads an owned project for an authenticated user.
-- `/projects/[id]/run` starts or displays runtime state without fabricated preview URLs.
+- `/projects/[id]/run` starts or displays runtime state without fabricated
+  preview URLs.
 - `/settings` loads provider/account settings without exposing secrets.
-
-Post-deploy checks:
-
-- Confirm the app presents the public HTTPS origin in auth redirects.
-- Confirm generated preview URLs use `UDD_PREVIEW_HOST` and are reachable from a separate client browser.
-- Confirm logs do not claim deployment, live preview, provider use, or task completion unless the real operation succeeded.
 
 ## 14. Verification checklist
 
-Mechanical source checks for the implementation branch:
+### 14.1 Source-side checks (runtime-agnostic)
 
 ```sh
 rg -n "output: ['\"]standalone['\"]|experimental:.*after|after: true" next.config.mjs
@@ -460,41 +566,81 @@ rg -n "BETTER_AUTH_SECRET|BETTER_AUTH_URL|DATABASE_URL|UDD_PREVIEW_HOST|UDD_DEFA
 rg -n "auth\.users|auth\.uid\(" scripts drizzle lib/db
 ```
 
-Expected future build checks:
+### 14.2 Image-side checks
 
 ```sh
-pnpm typecheck
-pnpm build
-test -f .next/standalone/server.js
-test -d .next/static
+docker images | grep udd-web
+docker manifest inspect <forgejo-registry-host>/<owner>/udd-web:<git-sha>
+docker compose -f /srv/udd/docker-compose.yml config
 ```
 
-Service and tunnel status checks:
+`docker compose ... config` validates the compose file shape and
+substitutes any environment values without bringing the stack up.
+
+### 14.3 Container status checks
 
 ```sh
-systemctl status <udd-service-name> --no-pager
-systemctl status <cloudflared-service-name> --no-pager
-journalctl -u <udd-service-name> -n 100 --no-pager
-journalctl -u <cloudflared-service-name> -n 100 --no-pager
+docker compose -f /srv/udd/docker-compose.yml ps
+docker compose -f /srv/udd/docker-compose.yml logs --tail=100 udd-web
+docker inspect --format '{{ .State.Health.Status }}' udd-web
 ```
 
-Env verification checks, run against a redacted env inventory rather than printing secret values:
+### 14.4 Environment verification
+
+Run against a redacted env inventory rather than printing real values:
 
 ```sh
-grep -E '^(NODE_ENV|PATH|BETTER_AUTH_SECRET|BETTER_AUTH_URL|DATABASE_URL|UDD_PREVIEW_HOST|UDD_DEFAULT_AI_BASE_URL|UDD_DEFAULT_AI_MODEL|UDD_DEFAULT_AI_API_KEY|UDD_SECRET_KEY|UDD_AI_PROVIDER)=' <redacted-env-inventory>
-grep -E '^(NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL|AI_GATEWAY_API_KEY|VERCEL)=' <redacted-env-inventory> && exit 1 || true
+grep -E '^(NODE_ENV|BETTER_AUTH_SECRET|BETTER_AUTH_URL|DATABASE_URL|UDD_PREVIEW_HOST|UDD_DEFAULT_AI_BASE_URL|UDD_DEFAULT_AI_MODEL|UDD_DEFAULT_AI_API_KEY|UDD_SECRET_KEY|UDD_AI_PROVIDER)=' <redacted-env-inventory>
+grep -E '^(NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL|AI_GATEWAY_API_KEY|VERCEL|PATH)=' <redacted-env-inventory> && exit 1 || true
 ```
+
+`PATH=` is now in the second grep (must-not-appear) because the container
+image bakes its own `PATH`.
 
 ## 15. Locked assumptions
 
-- Legion has a stable service user, Node runtime, pnpm, PostgreSQL client tools, and cloudflared installed by the operator before first deployment.
-- The first production process model is systemd plus Next standalone server; Docker is deferred to later hardening.
-- PostgreSQL is reachable from Legion through `DATABASE_URL` with credentials managed outside the repository.
-- Cloudflare Tunnel owns public HTTPS for the app origin.
-- `BETTER_AUTH_URL` is the app public HTTPS origin and must not point at localhost.
-- `UDD_PREVIEW_HOST` is a separate public or browser-routable preview origin selected by the operator.
-- The future migration branch provides an explicit migration command; this runbook keeps it as `<migration-command-using-DATABASE_URL>` until source defines the exact command.
-- The final Better Auth table names and Drizzle migration paths must be verified against generated schema before first deploy.
-- Preview traffic must not be exposed through Cloudflare until the source-backed routing mechanism is confirmed: dedicated preview router, bounded per-preview ports, or another implementation-owned design.
-- Backup storage location, retention, restore rehearsal, and encryption method must be selected before production cutover.
-- Exact systemd unit paths, user/group names, and Cloudflare hostnames are operator-provided Legion values that must be filled in before enabling services.
+- Legion has Docker Engine and the Compose plugin installed.
+- The `legion-internal` external Docker network exists; existing
+  `caddy`, `cloudflared`, and `postgres:16` containers are joined to it.
+- The Forgejo container registry on Legion is the canonical image store
+  for UDD, addressed as `<forgejo-registry-host>/<owner>/udd-web`.
+- `BETTER_AUTH_URL` equals `https://udd.<apex>`. Cloudflared has either
+  a wildcard `*.<apex>` ingress rule or an explicit `udd.<apex>` rule
+  routing to caddy.
+- `UDD_PREVIEW_HOST` is a separate operator-provided public origin.
+- The application migration command remains a placeholder
+  (`<migration-command-using-DATABASE_URL>`) until the implementation
+  branch lands.
+- Backup destination, retention, restore rehearsal, and encryption are
+  operator-defined.
+- `<forgejo-registry-host>`, `<owner>`, `<caddy-config-mount>`,
+  `<postgres-superuser>`, and `<apex>` are operator-provided Legion
+  values.
+- Final Better Auth table names and Drizzle migration paths must be
+  verified against the generated schema before first deploy.
+- Preview traffic must not be exposed through Cloudflare until the
+  source-backed routing mechanism is confirmed.
+
+This runbook makes no assumptions about systemd units, host-side Node
+or pnpm versions, or host-side PostgreSQL client tools.
+
+### 15.1 Open questions
+
+Items not resolved by `docs/migration/docker-compose-architecture.md`
+and recorded so they cannot be silently skipped at cutover.
+
+- **Caddy reload mechanism.** §7 and
+  `docs/migration/docker-compose-architecture.md:436-475` specify the
+  reverse-proxy rule but not the operator-specific reload command.
+- **Migration command shape.** §10 step 6 leaves
+  `<migration-command-using-DATABASE_URL>` as a placeholder; the
+  implementation branch will define whether migrations ship as a
+  `docker compose run` step, a separate one-shot image, or an ad-hoc
+  `docker run` invocation.
+- **Backup destination and retention.** §9.2 shows command shape; the
+  destination filesystem, retention window, restore rehearsal cadence,
+  and encryption method are still operator-defined.
+- **Postgres superuser name.** Used in §10 step 2, §9.2, and §11.4 as
+  `<postgres-superuser>`; not specified by either the compose-architecture
+  doc or this runbook.
+
