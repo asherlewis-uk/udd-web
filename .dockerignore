@@ -1,0 +1,38 @@
+# VCS
+.git
+.github
+.gitignore
+
+# Build artifacts / deps
+node_modules
+.next
+out
+dist
+tsconfig.tsbuildinfo
+
+# Env files — never bake into image
+.env
+.env.*
+
+# Editor / OS
+.vscode
+.idea
+.DS_Store
+
+# Test / coverage
+coverage
+.nyc_output
+
+# Docs (not needed in build context)
+docs
+*.md
+README.md
+AGENTS.md
+CLAUDE.md
+
+# Docker meta (avoid recursive context)
+Dockerfile
+.dockerignore
+
+# Session / local state
+.copilot
