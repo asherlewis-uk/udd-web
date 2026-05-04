@@ -12,6 +12,13 @@ This repo is governed by `CLAUDE.md`, `AGENTS.md`, `docs/system-state.md`, `docs
 - Verify product changes with `pnpm typecheck`, `pnpm build`, `git --no-pager diff --check`, `git --no-pager status --short`, and `git --no-pager diff --stat` unless the task is docs/skills-only and a narrower check is justified.
 - Report uncertainty instead of guessing. Separate evidence-backed findings from assumptions, UX polish, and runtime checks still needed.
 
+## Hermes / fleet prompt workflow
+
+- When a task is driven by `docs/user_next_prompt.md`, reread the current file before dispatching agents. If the prompt has changed since prior blocked todos were created, reconcile the SQL todo queue and dependencies to the current prompt before continuing.
+- Use only skills that are actually present in `.github/skills/` or available through the CLI skill tool. If a prompt names unavailable skills, report that mismatch and map the intent to the closest available repo skill instead of claiming the missing skill was loaded.
+- For migration-doc rotations and Hermes handoffs, the bring-back file is part of the deliverable. Do not mark the task complete until required line counts, citation checks, self-audits, and `docs/user_bring_back_agent_response_to_hermes.md` have been written or explicitly reported as blocked.
+- For final gates that depend on an independent review, preserve the reviewer verdict as durable evidence in the bring-back report or a session artifact. If a background review result cannot be retrieved, rerun the review before committing rather than relying on the notification alone.
+
 <!-- gortex:communities:start -->
 <!-- gortex:skills:start -->
 ## Community Skills
