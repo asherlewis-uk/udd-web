@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/client"
+import { authClient } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel, FieldGroup, FieldDescription, FieldError } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -26,19 +26,10 @@ export function SignUpForm() {
     }
     setLoading(true)
     try {
-      const supabase = createClient()
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo:
-            process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ??
-            `${window.location.origin}/auth/callback`,
-          data: { display_name: displayName || email.split("@")[0] },
-        },
-      })
-      if (signUpError) throw signUpError
-      router.push("/auth/sign-up-success")
+      const name = displayName.trim() || email.split("@")[0]
+      const { error: signUpError } = await authClient.signUp.email({ email, password, name })
+      if (signUpError) throw new Error(signUpError.message)
+      router.push("/projects")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign up")
     } finally {

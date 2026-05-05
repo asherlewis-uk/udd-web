@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
 import {
   getProvider,
   isProviderId,
@@ -82,11 +82,9 @@ export async function saveProviderCredential(
   providerId: string,
   apiKey: string,
 ): Promise<void> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const session = await getSession();
+  if (!session) throw new Error("Not authenticated");
+  const user = session.user;
 
   const normalized = providerId?.toLowerCase();
   if (!isProviderId(normalized)) throw new Error("Invalid provider id");
@@ -104,11 +102,9 @@ export async function saveProviderCredential(
 export async function deleteProviderCredential(
   providerId: string,
 ): Promise<void> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const session = await getSession();
+  if (!session) throw new Error("Not authenticated");
+  const user = session.user;
 
   const normalized = providerId?.toLowerCase();
   if (!isProviderId(normalized)) throw new Error("Invalid provider id");
@@ -124,11 +120,9 @@ export async function deleteProviderCredential(
 export async function getProviderCredentialStatuses(): Promise<
   Record<ProviderId, ProviderCredentialStatus>
 > {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const session = await getSession();
+  if (!session) throw new Error("Not authenticated");
+  const user = session.user;
 
   const result = {} as Record<ProviderId, ProviderCredentialStatus>;
   for (const pid of Object.keys(PROVIDERS) as ProviderId[]) {

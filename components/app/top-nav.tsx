@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/brand";
 import { UserMenu } from "@/components/app/user-menu";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/db/supabase-legacy";
+import { getSession } from "@/lib/auth-session";
 
 export async function TopNav() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getSession();
+  const user = session?.user ?? null;
 
   let displayName: string | null = null;
   if (user) {

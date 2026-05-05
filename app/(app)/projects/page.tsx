@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Plus, FolderPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +14,8 @@ import { ProjectCard } from "@/components/projects/project-card";
 import type { ProjectActivity } from "@/components/projects/activity-summary";
 import { ProjectFilters } from "@/components/projects/project-filters";
 import { MobileProjectsListScreen } from "@/components/mobile/projects-list-screen";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { formatRelative } from "@/lib/slug";
 import type { AITaskStatus, Project, RunStatus } from "@/lib/types";
 import type { MobileProject } from "@/components/mobile/types";
@@ -32,9 +34,9 @@ export default async function ProjectsPage({
   const { q = "", status = "all" } = await searchParams;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getSession();
+  if (!session) redirect("/auth/login");
+  const user = session.user;
 
   let query = supabase
     .from("projects")
@@ -58,13 +60,11 @@ export default async function ProjectsPage({
         .from("projects")
         .select("*")
         .order("updated_at", { ascending: false }),
-      user
-        ? supabase
-            .from("profiles")
-            .select("display_name")
-            .eq("id", user.id)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
+      supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", user.id)
+        .maybeSingle(),
     ]);
   const projects = (data ?? []) as Project[];
   const allProjects = (mobileData ?? []) as Project[];

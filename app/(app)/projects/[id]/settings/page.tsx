@@ -7,7 +7,8 @@ import { ProjectSettingsForm } from "@/components/workspace/project-settings-for
 import { ProjectDangerZone } from "@/components/workspace/project-danger-zone";
 import { MobileRouteShell } from "@/components/mobile/mobile-route-shell";
 import { MobileProjectSettingsScreen } from "@/components/mobile/project-settings-screen";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { formatRelative } from "@/lib/slug";
 import type { Project } from "@/lib/types";
 import type { RunStatus } from "@/lib/types";
@@ -23,10 +24,9 @@ export default async function ProjectSettingsPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const session = await getSession();
+  if (!session) notFound();
+  const user = session.user;
 
   const [
     { data },

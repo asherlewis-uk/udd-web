@@ -3,7 +3,8 @@
 import { after } from "next/server"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
-import { createClient } from "@/lib/supabase/server"
+import { getSession } from "@/lib/auth-session"
+import { createClient } from "@/lib/db/supabase-legacy"
 import { driveSession, startRun, stopRun } from "@/lib/runtime/service"
 
 /**
@@ -51,10 +52,9 @@ export async function startRunFromTaskAction(formData: FormData): Promise<void> 
   if (!taskId) throw new Error("Missing task id")
 
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error("Not authenticated")
+  const session = await getSession()
+  if (!session) throw new Error("Not authenticated")
+  const user = session.user
 
   const { data: task, error: taskError } = await supabase
     .from("ai_tasks")

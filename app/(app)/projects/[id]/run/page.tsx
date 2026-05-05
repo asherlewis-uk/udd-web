@@ -10,7 +10,8 @@ import { LogStream } from "@/components/run/log-stream";
 import { PreviewPanel } from "@/components/run/preview-panel";
 import { SessionsHistory } from "@/components/run/sessions-history";
 import { MobilePreviewRouteScreen } from "@/components/mobile/preview-route-screen";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { formatRelative } from "@/lib/slug";
 import { reapStaleSessions } from "@/lib/runtime/service";
 import type { Project, RunStatus } from "@/lib/types";
@@ -32,10 +33,9 @@ export default async function RunPage({
   // Resolve user up-front so every query can belt-and-braces the RLS check
   // with an explicit owner filter. The (app) layout already redirects
   // unauthenticated users, so notFound() here is purely defensive.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const session = await getSession();
+  if (!session) notFound();
+  const user = session.user;
 
   const [
     { data: project },

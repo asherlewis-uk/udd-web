@@ -3,7 +3,8 @@
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { runAITask } from "@/lib/ai/service";
 import { classifyPrompt } from "@/lib/ai/classify";
 import {
@@ -22,10 +23,9 @@ import type {
 
 async function getUser() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const session = await getSession();
+  if (!session) throw new Error("Not authenticated");
+  const user = session.user;
   return { supabase, user };
 }
 

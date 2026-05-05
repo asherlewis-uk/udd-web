@@ -1,4 +1,5 @@
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import {
   analyzeFile,
   formatBytes,
@@ -20,10 +21,9 @@ import {
 export async function startRun(projectId: string): Promise<string> {
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const authSession = await getSession();
+  if (!authSession) throw new Error("Not authenticated");
+  const user = authSession.user;
 
   // Confirm the project exists and belongs to the caller (RLS also enforces this).
   const { data: project, error: projectError } = await supabase
@@ -46,7 +46,7 @@ export async function startRun(projectId: string): Promise<string> {
     );
   }
 
-  const { data: session, error: sessionError } = await supabase
+  const { data: runSession, error: sessionError } = await supabase
     .from("run_sessions")
     .insert({
       project_id: projectId,
@@ -58,11 +58,11 @@ export async function startRun(projectId: string): Promise<string> {
     })
     .select("id")
     .single();
-  if (sessionError || !session)
+  if (sessionError || !runSession)
     throw new Error(sessionError?.message ?? "Failed to start run");
 
   await writeEvent(supabase, {
-    session_id: session.id,
+    session_id: runSession.id,
     project_id: projectId,
     owner_id: user.id,
     level: "system",
@@ -76,7 +76,7 @@ export async function startRun(projectId: string): Promise<string> {
     .eq("id", projectId)
     .eq("owner_id", user.id);
 
-  return session.id;
+  return runSession.id;
 }
 
 /**
@@ -84,19 +84,18 @@ export async function startRun(projectId: string): Promise<string> {
  */
 export async function stopRun(sessionId: string): Promise<void> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const authSession = await getSession();
+  if (!authSession) throw new Error("Not authenticated");
+  const user = authSession.user;
 
-  const { data: session } = await supabase
+  const { data: runSession } = await supabase
     .from("run_sessions")
     .select("id, project_id, owner_id, status")
     .eq("id", sessionId)
     .eq("owner_id", user.id)
     .single();
-  if (!session) return;
-  if (!(session.status === "running" || session.status === "starting")) return;
+  if (!runSession) return;
+  if (!(runSession.status === "running" || runSession.status === "starting")) return;
 
   // running/starting → stopping. Conditional so a concurrent stop or an
   // error-path terminal write can't be silently reversed.
@@ -111,7 +110,7 @@ export async function stopRun(sessionId: string): Promise<void> {
 
   await writeEvent(supabase, {
     session_id: sessionId,
-    project_id: session.project_id as string,
+    project_id: runSession.project_id as string,
     owner_id: user.id,
     level: "system",
     source: "system",
@@ -137,7 +136,7 @@ export async function stopRun(sessionId: string): Promise<void> {
 
   await writeEvent(supabase, {
     session_id: sessionId,
-    project_id: session.project_id as string,
+    project_id: runSession.project_id as string,
     owner_id: user.id,
     level: "system",
     source: "system",

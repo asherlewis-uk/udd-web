@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { createClient } from "@/lib/supabase/client"
+import { authClient } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Field, FieldLabel, FieldGroup, FieldDescription, FieldError } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -24,9 +24,8 @@ export function LoginForm() {
     setError(null)
     setLoading(true)
     try {
-      const supabase = createClient()
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password })
-      if (signInError) throw signInError
+      const { error: signInError } = await authClient.signIn.email({ email, password })
+      if (signInError) throw new Error(signInError.message)
       router.push(redirectTo)
       router.refresh()
     } catch (err) {

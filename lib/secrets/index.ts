@@ -1,5 +1,5 @@
 import "server-only"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/supabase-legacy"
 import { encrypt, decrypt } from "./crypto"
 
 const TABLE = "user_secrets"

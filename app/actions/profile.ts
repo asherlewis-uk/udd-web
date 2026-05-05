@@ -1,21 +1,22 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { createClient } from "@/lib/supabase/server"
-import { createServiceClient } from "@/lib/supabase/service"
+import { headers } from "next/headers"
+import { eq } from "drizzle-orm"
+import { auth } from "@/lib/auth"
+import { getSession } from "@/lib/auth-session"
+import { getDb } from "@/lib/db"
+import { profiles, user } from "@/lib/db/schema"
 
 export async function updateDisplayName(displayName: string) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) throw new Error("Not authenticated")
+  const session = await getSession()
+  if (!session) throw new Error("Not authenticated")
 
-  const { error } = await supabase
-    .from("profiles")
-    .update({ display_name: displayName.trim() || null })
-    .eq("id", user.id)
-  if (error) throw new Error(error.message)
+  await getDb()
+    .update(profiles)
+    .set({ displayName: displayName.trim() || null })
+    .where(eq(profiles.id, session.user.id))
+
   revalidatePath("/settings")
 }
 
@@ -24,17 +25,11 @@ export async function deleteAccount(): Promise<{
   error?: string
 }> {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-    if (authError) return { success: false, error: authError.message }
-    if (!user) return { success: false, error: "Not authenticated" }
+    const session = await getSession()
+    if (!session) return { success: false, error: "Not authenticated" }
 
-    const serviceClient = createServiceClient()
-    const { error } = await serviceClient.auth.admin.deleteUser(user.id)
-    if (error) return { success: false, error: error.message }
+    await getDb().delete(user).where(eq(user.id, session.user.id))
+    await auth.api.signOut({ headers: await headers() })
 
     return { success: true }
   } catch (error) {

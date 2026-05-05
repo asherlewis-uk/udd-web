@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { isProviderId, type ProviderId } from "@/lib/ai/providers";
 
 type SaveAIProviderConfigInput = {
@@ -56,10 +57,9 @@ export async function saveAIProviderConfig(
   input: SaveAIProviderConfigInput,
 ): Promise<void> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
+  const session = await getSession();
+  if (!session) throw new Error("Not authenticated");
+  const user = session.user;
 
   const normalizedProvider = input.providerId?.toLowerCase();
   if (!isProviderId(normalizedProvider)) {

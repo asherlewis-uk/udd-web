@@ -4,7 +4,8 @@ import { AccountDangerZone } from "@/components/settings/account-danger-zone";
 import { ProviderForm } from "@/components/settings/provider-form";
 import { MobileAccountSettingsScreen } from "@/components/mobile/account-settings-screen";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { getProvider, isProviderId, type ProviderId } from "@/lib/ai/providers";
 import {
   getProviderCredentialStatusesForOwner,
@@ -18,10 +19,9 @@ export const metadata = {
 
 export default async function SettingsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
+  const session = await getSession();
+  if (!session) redirect("/auth/login");
+  const user = session.user;
 
   const { data: profile } = await supabase
     .from("profiles")

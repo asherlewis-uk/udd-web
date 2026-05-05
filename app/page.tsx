@@ -3,13 +3,11 @@ import { redirect } from "next/navigation";
 import { ArrowUpRight, Bot, FolderGit2, Play, Terminal } from "lucide-react";
 import { Wordmark } from "@/components/brand";
 import { Button } from "@/components/ui/button";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
 
 export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const session = await getSession();
+  const user = session?.user ?? null;
 
   if (user) redirect("/projects");
 

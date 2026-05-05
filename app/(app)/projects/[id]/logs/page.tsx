@@ -16,7 +16,8 @@ import {
   MobileLogsScreen,
   type MobileConsoleEvent,
 } from "@/components/mobile/logs-screen";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { formatRelative } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import type { Project, RunStatus } from "@/lib/types";
@@ -43,10 +44,9 @@ export default async function LogsPage({
   // Resolve user up-front so the query can belt-and-braces the RLS check
   // with an explicit owner filter. The (app) layout already redirects
   // unauthenticated users, so notFound() here is purely defensive.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const session = await getSession();
+  if (!session) notFound();
+  const user = session.user;
 
   const [
     { data: project },

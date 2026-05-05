@@ -1,5 +1,5 @@
 import { parse as babelParse } from "@babel/parser"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@/lib/db/supabase-legacy"
 
 /**
  * Minimal execution service: rather than a fake "booting / installing / ready"

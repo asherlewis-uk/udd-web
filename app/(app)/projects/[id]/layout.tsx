@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { touchProjectOpened } from "@/app/actions/projects";
 
 export default async function ProjectLayout({
@@ -11,10 +12,9 @@ export default async function ProjectLayout({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const session = await getSession();
+  if (!session) notFound();
+  const user = session.user;
 
   const { data, error } = await supabase
     .from("projects")

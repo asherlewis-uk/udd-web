@@ -17,7 +17,8 @@ import {
   MobileFilesScreen,
   type MobileFileDetail,
 } from "@/components/mobile/files-screen";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { formatRelative } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import type { Project, RunStatus } from "@/lib/types";
@@ -49,10 +50,9 @@ export default async function FilesPage({
   const { file: requestedFile } = await searchParams;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const session = await getSession();
+  if (!session) notFound();
+  const user = session.user;
 
   const [
     { data: project },

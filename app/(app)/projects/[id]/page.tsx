@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { TaskPoller } from "@/components/ai/task-poller";
 import { RunPoller } from "@/components/run/run-poller";
 import { MobileShell } from "@/components/mobile/mobile-shell";
-import { createClient } from "@/lib/supabase/server";
+import { getSession } from "@/lib/auth-session";
+import { createClient } from "@/lib/db/supabase-legacy";
 import { formatRelative } from "@/lib/slug";
 import { getRepairDisplayPrompt, getRepairMetadata } from "@/lib/ai/repair";
 import { deriveNextAction } from "@/lib/workspace/next-action";
@@ -75,10 +76,9 @@ export default async function WorkspacePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) notFound();
+  const session = await getSession();
+  if (!session) notFound();
+  const user = session.user;
 
   const [
     { data: projectData },

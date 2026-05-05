@@ -1,13 +1,11 @@
 import { redirect } from "next/navigation"
 import { TopNav } from "@/components/app/top-nav"
-import { createClient } from "@/lib/supabase/server"
+import { getSession } from "@/lib/auth-session"
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) redirect("/auth/login")
+  const session = await getSession()
+  if (!session) redirect("/auth/login")
+  const user = session.user
 
   return (
     <div className="flex min-h-screen flex-col">
