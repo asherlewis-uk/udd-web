@@ -38,3 +38,17 @@ docs/user_bring_back_agent_response_to_hermes.md
 docs/user_next_prompt.md
 docs/_phase2_prompt_stash.md
 docs/archive/
+
+# AI tool scaffolding — generated/machine-specific, not source
+GEMINI.md
+.gemini/
+AGENTS.md
+.claude/skills/generated/
+
+# Gortex community-skill injections — regenerated on every index run
+.continue/rules/gortex-communities.md
+.cursor/rules/gortex-communities.mdc
+.github/copilot-instructions.md
+
+# VSCode workspace config — machine-specific
+.vscode/mcp.json
