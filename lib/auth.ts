@@ -7,25 +7,11 @@ import { getDb } from "@/lib/db"
 import * as schema from "@/lib/db/schema"
 import { profiles } from "@/lib/db/schema"
 
-const buildWithoutDatabase =
-  process.env.NEXT_PHASE === "phase-production-build" && !process.env.DATABASE_URL
-
 export const auth = betterAuth({
-  secret:
-    process.env.BETTER_AUTH_SECRET ??
-    (buildWithoutDatabase
-      ? `${crypto.randomUUID()}${crypto.randomUUID()}`
-      : undefined),
-  baseURL: process.env.BETTER_AUTH_URL ?? (buildWithoutDatabase ? "http://localhost:3000" : undefined),
-  ...(buildWithoutDatabase
-    ? {}
-    : {
-        database: (options: Parameters<ReturnType<typeof drizzleAdapter>>[0]) =>
-          drizzleAdapter(getDb(), {
-            provider: "pg",
-            schema,
-          })(options),
-      }),
+  database: drizzleAdapter(getDb(), {
+    provider: "pg",
+    schema,
+  }),
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: false,
