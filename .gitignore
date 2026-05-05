@@ -41,6 +41,7 @@ docs/archive/
 
 # AI tool scaffolding — generated/machine-specific, not source
 GEMINI.md
+CLAUDE.md
 .gemini/
 AGENTS.md
 .claude/skills/generated/
