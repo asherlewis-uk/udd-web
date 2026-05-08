@@ -15,8 +15,11 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile --ignore-scripts \
  && pnpm rebuild sharp
 
-COPY . .
+ARG DATABASE_URL
+ENV DATABASE_URL=${DATABASE_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY . .
 RUN pnpm build \
  && test -f .next/standalone/server.js \
  && test -d .next/static

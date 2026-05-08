@@ -13,6 +13,9 @@ const nextConfig = {
     unoptimized: true,
   },
   output: 'standalone',
+  experimental: {
+    after: true,
+  },
 }
 
 export default nextConfig
