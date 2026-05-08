@@ -15,7 +15,25 @@ import { TaskPoller } from "@/components/ai/task-poller"
 import { MobileRouteShell } from "@/components/mobile/mobile-route-shell"
 import { MobileAIScreen } from "@/components/mobile/ai-screen"
 import { getSession } from "@/lib/auth-session"
-import { createClient } from "@/lib/db/supabase-legacy"
+import {
+  getProjectByIdAndOwner,
+  getProjectsForOwner,
+  getProfileDisplayName,
+  getRunSessionsForProject,
+  countProjectFiles,
+  getAITaskListItemsForProject,
+  getAITaskById,
+  getAITaskEvents,
+  getPromptById,
+} from "@/lib/db/queries"
+import {
+  mapProject,
+  mapProjectList,
+  mapAITask,
+  mapAITaskListItem,
+  mapAITaskEvent,
+  mapRunSession,
+} from "@/lib/db/mappers"
 import { formatRelative } from "@/lib/slug"
 import { reapStaleTasks } from "@/lib/ai/service"
 import type { Project, RunStatus } from "@/lib/types"
@@ -31,68 +49,34 @@ export default async function AiPage({
 }) {
   const { id } = await params
   const { task: requestedTaskId } = await searchParams
-  const supabase = await createClient()
 
-  // Resolve user up-front so every query can belt-and-braces the RLS check
-  // with an explicit owner filter. The (app) layout already redirects
-  // unauthenticated users, so notFound() here is purely defensive.
   const session = await getSession()
   if (!session) notFound()
   const user = session.user
 
-  // Opportunistically mark any long-stalled tasks as failed before loading
-  // the list. This keeps the UI honest without requiring a background job.
   await reapStaleTasks(id, user.id)
 
   const [
-    { data: projectData },
-    { data: allProjectsData },
-    { data: profileData },
-    { data: latestRunData },
-    { count: filesCount },
-    { data: tasksData },
+    projectRaw,
+    allProjectsRaw,
+    displayName,
+    latestRun,
+    filesCount,
+    tasksRaw,
   ] = await Promise.all([
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("id", id)
-      .eq("owner_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("owner_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(30),
-    supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("run_sessions")
-      .select("id, status, preview_url, started_at, stopped_at, created_at, error")
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("project_files")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", id)
-      .eq("owner_id", user.id),
-    supabase
-      .from("ai_tasks")
-      .select("id, title, kind, status, created_at, finished_at")
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(50),
+    getProjectByIdAndOwner(id, user.id),
+    getProjectsForOwner(user.id, { limit: 30 }),
+    getProfileDisplayName(user.id),
+    getRunSessionsForProject(id, user.id, { limit: 1 }),
+    countProjectFiles(id, user.id),
+    getAITaskListItemsForProject(id, user.id, 50),
   ])
-  if (!projectData) notFound()
+  if (!projectRaw) notFound()
 
-  const tasks: AITaskListItem[] = (tasksData ?? []) as AITaskListItem[]
+  const project = mapProject(projectRaw) as Project
+  const allProjects = mapProjectList(allProjectsRaw) as Project[]
+  const tasks = tasksRaw.map(mapAITaskListItem) as AITaskListItem[]
+
   const hasTasks = tasks.length > 0
   const activeTaskId =
     (requestedTaskId && tasks.find((t) => t.id === requestedTaskId)?.id) ?? tasks[0]?.id ?? null
@@ -104,49 +88,29 @@ export default async function AiPage({
   let selectedPrompt: string | null = null
 
   if (activeTaskId) {
-    const { data: taskData } = await supabase
-      .from("ai_tasks")
-      .select(
-        "id, project_id, prompt_id, kind, title, status, input, output, error, run_session_id, created_at, started_at, finished_at",
-      )
-      .eq("id", activeTaskId)
-      .eq("owner_id", user.id)
-      .single()
-    selectedTask = (taskData as unknown as AITaskRow | null) ?? null
+    const taskRaw = await getAITaskById(activeTaskId, user.id)
+    selectedTask = taskRaw ? (mapAITask(taskRaw) as AITaskRow) : null
 
     if (selectedTask) {
-      const [{ data: eventsData }, promptRes] = await Promise.all([
-        supabase
-          .from("ai_task_events")
-          .select("id, kind, payload, created_at")
-          .eq("task_id", activeTaskId)
-          .eq("owner_id", user.id)
-          .order("created_at", { ascending: true }),
+      const [eventsRaw, promptRow] = await Promise.all([
+        getAITaskEvents(activeTaskId, user.id),
         selectedTask.prompt_id
-          ? supabase
-              .from("prompts")
-              .select("body")
-              .eq("id", selectedTask.prompt_id)
-              .eq("owner_id", user.id)
-              .single()
-          : Promise.resolve({ data: null as { body: string } | null }),
+          ? getPromptById(selectedTask.prompt_id, user.id)
+          : Promise.resolve(null),
       ])
-      selectedEvents = (eventsData ?? []) as typeof selectedEvents
+      selectedEvents = eventsRaw.map(mapAITaskEvent) as typeof selectedEvents
       const inputPrompt =
         typeof (selectedTask.input as { prompt?: unknown })?.prompt === "string"
           ? ((selectedTask.input as { prompt: string }).prompt as string)
           : null
-      selectedPrompt = promptRes?.data?.body ?? inputPrompt ?? null
+      selectedPrompt = promptRow?.body ?? inputPrompt ?? null
     }
   }
 
-  const project = projectData as Project
   const mobileProject = toMobileProject(project, id)
-  const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
-    toMobileProject(item, id),
-  )
-  const mobileRunSession = latestRunData
-    ? toMobileRunSession(latestRunData as LatestRunSession)
+  const mobileProjects = allProjects.map((item) => toMobileProject(item, id))
+  const mobileRunSession = latestRun[0]
+    ? toMobileRunSession(mapRunSession(latestRun[0]))
     : null
 
   return (
@@ -157,10 +121,10 @@ export default async function AiPage({
           projects={mobileProjects}
           profile={{
             email: user.email ?? "",
-            displayName: profileData?.display_name ?? null,
+            displayName: displayName,
           }}
           runSession={mobileRunSession}
-          filesCount={filesCount ?? 0}
+          filesCount={filesCount}
           title="Generation history"
           subtitle={project.name}
           chatHref={`/projects/${id}`}
@@ -228,16 +192,6 @@ export default async function AiPage({
   )
 }
 
-type LatestRunSession = {
-  id: string
-  status: RunStatus
-  preview_url: string | null
-  started_at: string | null
-  stopped_at: string | null
-  created_at: string
-  error: string | null
-}
-
 function toMobileProject(project: Project, currentProjectId: string): MobileProject {
   return {
     id: project.id,
@@ -253,10 +207,18 @@ function toMobileProject(project: Project, currentProjectId: string): MobileProj
   }
 }
 
-function toMobileRunSession(session: LatestRunSession): MobileRunSession {
+function toMobileRunSession(session: {
+  id: string;
+  status: string;
+  preview_url: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  created_at: string;
+  error: string | null;
+}): MobileRunSession {
   return {
     id: session.id,
-    status: session.status,
+    status: session.status as RunStatus,
     previewUrl: session.preview_url,
     error: session.error,
     createdLabel: formatRelative(session.created_at),

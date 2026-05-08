@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import {
+  unsetDefaultAIProviderConfigs,
+  upsertProviderConfig,
+} from "@/lib/db/queries";
 import { isProviderId, type ProviderId } from "@/lib/ai/providers";
 
 type SaveAIProviderConfigInput = {
@@ -56,7 +59,6 @@ function sanitizeMetadata(
 export async function saveAIProviderConfig(
   input: SaveAIProviderConfigInput,
 ): Promise<void> {
-  const supabase = await createClient();
   const session = await getSession();
   if (!session) throw new Error("Not authenticated");
   const user = session.user;
@@ -69,53 +71,29 @@ export async function saveAIProviderConfig(
   const config = sanitizeMetadata(input.metadata);
   const setAsDefault = input.setAsDefault ?? true;
 
-  // Note: the upsert below writes secret_ref: null for the saved row.
-  // We no longer pre-clear secret_ref across all ai-kind rows because
-  // nothing in the app ever sets it to a non-null value; the redundant
-  // UPDATE was a wasted round trip. If/when a real secret-manager
-  // integration lands, revisit this clearing step.
-
   if (setAsDefault) {
-    const { error: unsetError } = await supabase
-      .from("provider_configs")
-      .update({ is_default: false })
-      .eq("owner_id", user.id)
-      .eq("kind", "ai");
-    if (unsetError) throw new Error(unsetError.message);
+    await unsetDefaultAIProviderConfigs(user.id);
   }
 
-  const { error } = await supabase.from("provider_configs").upsert(
-    {
-      owner_id: user.id,
+  try {
+    await upsertProviderConfig({
+      ownerId: user.id,
       kind: "ai",
       name: normalizedProvider,
       config,
-      secret_ref: null,
-      is_active: true,
-      is_default: setAsDefault,
-    },
-    { onConflict: "owner_id,kind,name" },
-  );
-
-  if (error) {
-    // 23505 = unique_violation. The partial index
-    // provider_configs_one_default_per_kind allows at most one
-    // is_default=true row per (owner, kind). Two concurrent saves for
-    // different providers with setAsDefault=true can race here: the
-    // "unset others" step is not transactional with this upsert, so the
-    // second writer can collide. The invariant is preserved (one default
-    // still wins), so we treat this specific case as a benign lost-update
-    // and let the user re-click if they meant a different provider.
+      secretRef: null,
+      isActive: true,
+      isDefault: setAsDefault,
+    });
+  } catch (error) {
     const pgCode = (error as { code?: string }).code;
     if (setAsDefault && pgCode === "23505") {
       console.log(
         "[v0] saveAIProviderConfig: concurrent default save lost race",
-        {
-          pgCode,
-        },
+        { pgCode },
       );
     } else {
-      throw new Error(error.message);
+      throw error;
     }
   }
   revalidatePath("/settings");

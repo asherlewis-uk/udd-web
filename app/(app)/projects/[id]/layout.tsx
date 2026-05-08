@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import { getProjectByIdAndOwner } from "@/lib/db/queries";
 import { touchProjectOpened } from "@/app/actions/projects";
 
 export default async function ProjectLayout({
@@ -11,19 +11,13 @@ export default async function ProjectLayout({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
   const session = await getSession();
   if (!session) notFound();
   const user = session.user;
 
-  const { data, error } = await supabase
-    .from("projects")
-    .select("id")
-    .eq("id", id)
-    .eq("owner_id", user.id)
-    .maybeSingle();
+  const project = await getProjectByIdAndOwner(id, user.id);
 
-  if (error || !data) notFound();
+  if (!project) notFound();
 
   // Fire-and-forget — do not block rendering.
   touchProjectOpened(id).catch(() => {});

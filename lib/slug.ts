@@ -10,9 +10,9 @@ export function slugify(input: string): string {
   )
 }
 
-export function formatRelative(iso: string | null | undefined): string {
+export function formatRelative(iso: string | Date | null | undefined): string {
   if (!iso) return "never"
-  const d = new Date(iso)
+  const d = iso instanceof Date ? iso : new Date(iso)
   const diff = Date.now() - d.getTime()
   const s = Math.floor(diff / 1000)
   if (s < 60) return "just now"

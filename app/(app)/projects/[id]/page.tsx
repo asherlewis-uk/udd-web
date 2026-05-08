@@ -3,7 +3,6 @@ import { TaskPoller } from "@/components/ai/task-poller";
 import { RunPoller } from "@/components/run/run-poller";
 import { MobileShell } from "@/components/mobile/mobile-shell";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
 import { formatRelative } from "@/lib/slug";
 import { getRepairDisplayPrompt, getRepairMetadata } from "@/lib/ai/repair";
 import { deriveNextAction } from "@/lib/workspace/next-action";
@@ -33,6 +32,27 @@ import type {
   RuntimeSummary,
   ValidationSummary,
 } from "@/lib/workspace/next-action";
+import {
+  getProjectByIdAndOwner,
+  getProjectsForOwner,
+  getProfileDisplayName,
+  getRunSessionsForProject,
+  countProjectFiles,
+  getAITasksForProject,
+  getProjectFilesForProject,
+  getPromptById,
+  getAITaskEvents,
+  getRunEventsForSession,
+} from "@/lib/db/queries";
+import {
+  mapProject,
+  mapProjectList,
+  mapRunSession,
+  mapRunEvent,
+  mapAITask,
+  mapAITaskEvent,
+  mapProjectFile,
+} from "@/lib/db/mappers";
 
 const CONVERSATION_TASK_LIMIT = 6;
 const CONVERSATION_RUN_LIMIT = 2;
@@ -74,73 +94,43 @@ export default async function WorkspacePage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
 
   const session = await getSession();
   if (!session) notFound();
   const user = session.user;
 
   const [
-    { data: projectData },
-    { data: tasksData },
-    { count: filesCount, data: filesData },
-    { data: runSessionsData },
-    { data: allProjectsData },
-    { data: profileData },
+    projectRow,
+    taskRows,
+    fileRows,
+    runSessionRows,
+    allProjectRows,
+    displayName,
+    filesCount,
   ] = await Promise.all([
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("id", id)
-      .eq("owner_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("ai_tasks")
-      .select(
-        "id, project_id, prompt_id, kind, title, status, input, output, error, run_session_id, created_at, started_at, finished_at",
-      )
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(CONVERSATION_TASK_LIMIT),
-    supabase
-      .from("project_files")
-      .select("id, path, language, size_bytes, updated_at", { count: "exact" })
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(6),
-    supabase
-      .from("run_sessions")
-      .select(
-        "id, status, started_at, stopped_at, created_at, error, preview_url",
-      )
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(CONVERSATION_RUN_LIMIT),
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("owner_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(30),
-    supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle(),
+    getProjectByIdAndOwner(id, user.id),
+    getAITasksForProject(id, user.id, { limit: CONVERSATION_TASK_LIMIT }),
+    getProjectFilesForProject(id, user.id, {
+      orderByUpdatedAt: true,
+      limit: 6,
+    }),
+    getRunSessionsForProject(id, user.id, { limit: CONVERSATION_RUN_LIMIT }),
+    getProjectsForOwner(user.id, { limit: 30 }),
+    getProfileDisplayName(user.id),
+    countProjectFiles(id, user.id),
   ]);
 
-  if (!projectData) notFound();
+  if (!projectRow) notFound();
 
-  const project = projectData as Project;
-  const recentTasks = (tasksData ?? []) as LatestTask[];
+  const project = mapProject(projectRow) as Project;
+  const recentTasks = taskRows.map(mapAITask) as LatestTask[];
   const latestTask = recentTasks[0] ?? null;
-  const recentRunSessions = (runSessionsData ?? []) as LatestRunSession[];
+  const recentRunSessions = runSessionRows.map(
+    mapRunSession,
+  ) as LatestRunSession[];
   const latestRunSession = recentRunSessions[0] ?? null;
-  const savedFiles = (filesData ?? []) as SavedFile[];
-  const count = filesCount ?? savedFiles.length;
+  const savedFiles = fileRows.map(mapProjectFile) as SavedFile[];
+  const count = filesCount;
 
   const taskIds = recentTasks.map((task) => task.id);
   const promptIds = Array.from(
@@ -153,41 +143,40 @@ export default async function WorkspacePage({
   const runSessionIds = recentRunSessions.map((session) => session.id);
 
   const promptRowsQuery = promptIds.length
-    ? supabase
-        .from("prompts")
-        .select("id, body")
-        .eq("project_id", id)
-        .eq("owner_id", user.id)
-        .in("id", promptIds)
-    : Promise.resolve({ data: [] as PromptRow[] });
+    ? Promise.all(
+        promptIds.map(async (promptId) => {
+          const row = await getPromptById(promptId, user.id);
+          return row ? { id: promptId, body: row.body } : null;
+        }),
+      ).then((rows) => rows.filter((r): r is PromptRow => r !== null))
+    : Promise.resolve([] as PromptRow[]);
   const taskEventsQuery = taskIds.length
-    ? supabase
-        .from("ai_task_events")
-        .select("id, task_id, kind, payload, created_at")
-        .eq("owner_id", user.id)
-        .in("task_id", taskIds)
-        .order("created_at", { ascending: true })
-        .limit(300)
-    : Promise.resolve({ data: [] as AITaskEventRow[] });
+    ? Promise.all(
+        taskIds.map(async (taskId) => {
+          const rows = await getAITaskEvents(taskId, user.id, { limit: 300 });
+          return rows.map(mapAITaskEvent) as AITaskEventRow[];
+        }),
+      ).then((arrays) => arrays.flat())
+    : Promise.resolve([] as AITaskEventRow[]);
   const runEventsQuery = runSessionIds.length
-    ? supabase
-        .from("run_events")
-        .select("id, session_id, level, source, message, created_at")
-        .eq("project_id", id)
-        .eq("owner_id", user.id)
-        .in("session_id", runSessionIds)
-        .order("created_at", { ascending: true })
-        .limit(120)
-    : Promise.resolve({ data: [] as RunEventRow[] });
+    ? Promise.all(
+        runSessionIds.map(async (sessionId) => {
+          const rows = await getRunEventsForSession(sessionId, user.id, {
+            limit: 120,
+          });
+          return rows.map(mapRunEvent) as RunEventRow[];
+        }),
+      ).then((arrays) => arrays.flat())
+    : Promise.resolve([] as RunEventRow[]);
 
   const [
     providerConfig,
     credentialStatuses,
-    { data: promptRowsData },
-    { data: taskEventsData },
-    { data: runEventsData },
+    promptRowsData,
+    taskEventsData,
+    runEventsData,
   ] = await Promise.all([
-    getActiveProviderForOwner(user.id, supabase),
+    getActiveProviderForOwner(user.id),
     getProviderCredentialStatusesForOwner(user.id),
     promptRowsQuery,
     taskEventsQuery,
@@ -218,17 +207,10 @@ export default async function WorkspacePage({
   };
 
   const promptsById = new Map(
-    ((promptRowsData ?? []) as PromptRow[]).map((prompt) => [
-      prompt.id,
-      prompt.body,
-    ]),
+    promptRowsData.map((prompt) => [prompt.id, prompt.body]),
   );
-  const taskEventsByTaskId = groupTaskEvents(
-    (taskEventsData ?? []) as AITaskEventRow[],
-  );
-  const runEventsBySessionId = groupRunEvents(
-    (runEventsData ?? []) as RunEventRow[],
-  );
+  const taskEventsByTaskId = groupTaskEvents(taskEventsData);
+  const runEventsBySessionId = groupRunEvents(runEventsData);
   const latestRunSummary = latestRunSession
     ? summarizeRuntimeEvents(
         runEventsBySessionId.get(latestRunSession.id) ?? [],
@@ -263,9 +245,8 @@ export default async function WorkspacePage({
     ? (runEventsBySessionId.get(latestRunSession.id) ?? [])
     : [];
   const mobileProject = toMobileProject(project, id);
-  const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
-    toMobileProject(item, id),
-  );
+  const allProjects = mapProjectList(allProjectRows) as Project[];
+  const mobileProjects = allProjects.map((item) => toMobileProject(item, id));
   const mobileLatestRunSession = latestRunSession
     ? toMobileRunSession(latestRunSession)
     : null;
@@ -286,7 +267,7 @@ export default async function WorkspacePage({
         projects={mobileProjects}
         profile={{
           email: user.email ?? "",
-          displayName: profileData?.display_name ?? null,
+          displayName: displayName ?? null,
         }}
         conversation={mobileConversation}
         filesCount={count}

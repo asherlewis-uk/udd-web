@@ -8,10 +8,16 @@ import { ProjectDangerZone } from "@/components/workspace/project-danger-zone";
 import { MobileRouteShell } from "@/components/mobile/mobile-route-shell";
 import { MobileProjectSettingsScreen } from "@/components/mobile/project-settings-screen";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import {
+  getProjectByIdAndOwner,
+  getProjectsForOwner,
+  getProfileDisplayName,
+  getRunSessionsForProject,
+  countProjectFiles,
+} from "@/lib/db/queries";
+import { mapProject, mapProjectList, mapRunSession } from "@/lib/db/mappers";
 import { formatRelative } from "@/lib/slug";
-import type { Project } from "@/lib/types";
-import type { RunStatus } from "@/lib/types";
+import type { Project, RunStatus } from "@/lib/types";
 import type {
   MobileProject,
   MobileRunSession,
@@ -23,73 +29,43 @@ export default async function ProjectSettingsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
   const session = await getSession();
   if (!session) notFound();
   const user = session.user;
 
   const [
-    { data },
-    { data: allProjectsData },
-    { data: profileData },
-    { data: latestRunData },
-    { count: filesCount },
+    projectRaw,
+    allProjectsRaw,
+    displayName,
+    latestRun,
+    filesCount,
   ] = await Promise.all([
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("id", id)
-      .eq("owner_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("owner_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(30),
-    supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("run_sessions")
-      .select(
-        "id, status, preview_url, started_at, stopped_at, created_at, error",
-      )
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("project_files")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", id)
-      .eq("owner_id", user.id),
+    getProjectByIdAndOwner(id, user.id),
+    getProjectsForOwner(user.id, { limit: 30 }),
+    getProfileDisplayName(user.id),
+    getRunSessionsForProject(id, user.id, { limit: 1 }),
+    countProjectFiles(id, user.id),
   ]);
-  if (!data) notFound();
-  const project = data as Project;
-  const mobileProject = toMobileProject(project, id);
-  const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
-    toMobileProject(item, id),
-  );
-  const mobileRunSession = latestRunData
-    ? toMobileRunSession(latestRunData as LatestRunSession)
+  if (!projectRaw) notFound();
+
+  const project = mapProject(projectRaw) as Project;
+  const allProjects = mapProjectList(allProjectsRaw) as Project[];
+  const mobileRunSession = latestRun[0]
+    ? toMobileRunSession(mapRunSession(latestRun[0]))
     : null;
 
   return (
     <>
       <div className="md:hidden">
         <MobileRouteShell
-          project={mobileProject}
-          projects={mobileProjects}
+          project={toMobileProject(project, id)}
+          projects={allProjects.map((item) => toMobileProject(item, id))}
           profile={{
             email: user.email ?? "",
-            displayName: profileData?.display_name ?? null,
+            displayName: displayName,
           }}
           runSession={mobileRunSession}
-          filesCount={filesCount ?? 0}
+          filesCount={filesCount}
           title="Project settings"
           subtitle={project.name}
           chatHref={`/projects/${id}`}
@@ -112,16 +88,6 @@ export default async function ProjectSettingsPage({
   );
 }
 
-type LatestRunSession = {
-  id: string;
-  status: RunStatus;
-  preview_url: string | null;
-  started_at: string | null;
-  stopped_at: string | null;
-  created_at: string;
-  error: string | null;
-};
-
 function toMobileProject(
   project: Project,
   currentProjectId: string,
@@ -140,10 +106,18 @@ function toMobileProject(
   };
 }
 
-function toMobileRunSession(session: LatestRunSession): MobileRunSession {
+function toMobileRunSession(session: {
+  id: string;
+  status: string;
+  preview_url: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  created_at: string;
+  error: string | null;
+}): MobileRunSession {
   return {
     id: session.id,
-    status: session.status,
+    status: session.status as RunStatus,
     previewUrl: session.preview_url,
     error: session.error,
     createdLabel: formatRelative(session.created_at),

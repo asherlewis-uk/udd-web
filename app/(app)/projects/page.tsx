@@ -15,7 +15,13 @@ import type { ProjectActivity } from "@/components/projects/activity-summary";
 import { ProjectFilters } from "@/components/projects/project-filters";
 import { MobileProjectsListScreen } from "@/components/mobile/projects-list-screen";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import {
+  getProfileDisplayName,
+  getProjectsForOwner,
+  getLatestAITaskActivityForProjects,
+  getLatestRunSessionActivityForProjects,
+} from "@/lib/db/queries";
+import { mapProjectList } from "@/lib/db/mappers";
 import { formatRelative } from "@/lib/slug";
 import type { AITaskStatus, Project, RunStatus } from "@/lib/types";
 import type { MobileProject } from "@/components/mobile/types";
@@ -32,76 +38,39 @@ export default async function ProjectsPage({
   searchParams: SP;
 }) {
   const { q = "", status = "all" } = await searchParams;
-  const supabase = await createClient();
 
   const session = await getSession();
   if (!session) redirect("/auth/login");
   const user = session.user;
 
-  let query = supabase
-    .from("projects")
-    .select("*")
-    .order("updated_at", { ascending: false });
-
-  if (status && status !== "all") {
-    query = query.eq("status", status);
-  }
-  if (q.trim()) {
-    const term = `%${q.trim()}%`;
-    query = query.or(
-      `name.ilike.${term},slug.ilike.${term},description.ilike.${term}`,
-    );
-  }
-
-  const [{ data, error }, { data: mobileData }, { data: profileData }] =
-    await Promise.all([
-      query,
-      supabase
-        .from("projects")
-        .select("*")
-        .order("updated_at", { ascending: false }),
-      supabase
-        .from("profiles")
-        .select("display_name")
-        .eq("id", user.id)
-        .maybeSingle(),
-    ]);
-  const projects = (data ?? []) as Project[];
-  const allProjects = (mobileData ?? []) as Project[];
+  const [projectsRaw, allProjectsRaw, displayName] = await Promise.all([
+    getProjectsForOwner(user.id, { status, search: q }),
+    getProjectsForOwner(user.id),
+    getProfileDisplayName(user.id),
+  ]);
+  const projects = mapProjectList(projectsRaw) as Project[];
+  const allProjects = mapProjectList(allProjectsRaw) as Project[];
   const mobileProjects = allProjects.map(toMobileProject);
 
   // Batch-fetch latest AI task and latest run session for activity surfacing.
   const activityMap = new Map<string, ProjectActivity>();
   if (allProjects.length > 0) {
     const projectIds = allProjects.map((p) => p.id);
-    const [tasksRes, runsRes] = await Promise.all([
-      supabase
-        .from("ai_tasks")
-        .select("project_id, title, status, created_at")
-        .in("project_id", projectIds)
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("run_sessions")
-        .select("project_id, status, created_at")
-        .in("project_id", projectIds)
-        .order("created_at", { ascending: false }),
+    const [taskRows, runRows] = await Promise.all([
+      getLatestAITaskActivityForProjects(projectIds, user.id),
+      getLatestRunSessionActivityForProjects(projectIds, user.id),
     ]);
 
     const latestTasks = new Map<
       string,
       { title: string; status: AITaskStatus; created_at: string }
     >();
-    for (const row of (tasksRes.data ?? []) as Array<{
-      project_id: string;
-      title: string;
-      status: AITaskStatus;
-      created_at: string;
-    }>) {
-      if (!latestTasks.has(row.project_id)) {
-        latestTasks.set(row.project_id, {
+    for (const row of taskRows) {
+      if (!latestTasks.has(row.projectId)) {
+        latestTasks.set(row.projectId, {
           title: row.title,
-          status: row.status,
-          created_at: row.created_at,
+          status: row.status as AITaskStatus,
+          created_at: row.createdAt.toISOString(),
         });
       }
     }
@@ -110,15 +79,11 @@ export default async function ProjectsPage({
       string,
       { status: RunStatus; created_at: string }
     >();
-    for (const row of (runsRes.data ?? []) as Array<{
-      project_id: string;
-      status: RunStatus;
-      created_at: string;
-    }>) {
-      if (!latestRuns.has(row.project_id)) {
-        latestRuns.set(row.project_id, {
-          status: row.status,
-          created_at: row.created_at,
+    for (const row of runRows) {
+      if (!latestRuns.has(row.projectId)) {
+        latestRuns.set(row.projectId, {
+          status: row.status as RunStatus,
+          created_at: row.createdAt.toISOString(),
         });
       }
     }
@@ -138,7 +103,7 @@ export default async function ProjectsPage({
           projects={mobileProjects}
           profile={{
             email: user?.email ?? "",
-            displayName: profileData?.display_name ?? null,
+            displayName: displayName,
           }}
         />
       </div>
@@ -162,11 +127,7 @@ export default async function ProjectsPage({
 
         <ProjectFilters initialQuery={q} initialStatus={status} />
 
-        {error ? (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-            {error.message}
-          </div>
-        ) : projects.length === 0 ? (
+        {projects.length === 0 ? (
           <Empty className="mt-6 border border-dashed border-border bg-card/40">
             <EmptyHeader>
               <EmptyMedia variant="icon">

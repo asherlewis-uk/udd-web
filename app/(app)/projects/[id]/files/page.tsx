@@ -18,7 +18,15 @@ import {
   type MobileFileDetail,
 } from "@/components/mobile/files-screen";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import {
+  getProjectByIdAndOwner,
+  getProjectsForOwner,
+  getProfileDisplayName,
+  getRunSessionsForProject,
+  getProjectFilesForProject,
+  getProjectFileByPath,
+} from "@/lib/db/queries";
+import { mapProject, mapProjectList, mapRunSession, mapProjectFile } from "@/lib/db/mappers";
 import { formatRelative } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import type { Project, RunStatus } from "@/lib/types";
@@ -48,84 +56,65 @@ export default async function FilesPage({
 }) {
   const { id } = await params;
   const { file: requestedFile } = await searchParams;
-  const supabase = await createClient();
 
   const session = await getSession();
   if (!session) notFound();
   const user = session.user;
 
   const [
-    { data: project },
-    { data: allProjectsData },
-    { data: profileData },
-    { data: latestRunData },
+    projectRaw,
+    allProjectsRaw,
+    displayName,
+    latestRun,
   ] = await Promise.all([
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("id", id)
-      .eq("owner_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("owner_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(30),
-    supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("run_sessions")
-      .select(
-        "id, status, preview_url, started_at, stopped_at, created_at, error",
-      )
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    getProjectByIdAndOwner(id, user.id),
+    getProjectsForOwner(user.id, { limit: 30 }),
+    getProfileDisplayName(user.id),
+    getRunSessionsForProject(id, user.id, { limit: 1 }),
   ]);
-  if (!project) notFound();
+  if (!projectRaw) notFound();
 
-  const { data, error } = await supabase
-    .from("project_files")
-    .select("id, path, language, size_bytes, updated_at")
-    .eq("project_id", id)
-    .eq("owner_id", user.id)
-    .order("path");
+  const project = mapProject(projectRaw) as Project;
+  const allProjects = mapProjectList(allProjectsRaw) as Project[];
 
-  const files = (data ?? []) as FileListItem[];
+  const fileRows = await getProjectFilesForProject(id, user.id, { orderByPath: true });
+  const fileList = fileRows.map((f) => ({
+    id: f.id,
+    path: f.path,
+    language: f.language,
+    size_bytes: f.sizeBytes,
+    updated_at: f.updatedAt.toISOString(),
+  }));
+
   const selectedPath =
-    files.find((file) => file.path === requestedFile)?.path ??
-    files[0]?.path ??
+    fileList.find((file) => file.path === requestedFile)?.path ??
+    fileList[0]?.path ??
     null;
 
   let selectedFile: SelectedFile | null = null;
   if (selectedPath) {
-    const { data: selectedData } = await supabase
-      .from("project_files")
-      .select("id, path, language, size_bytes, updated_at, content")
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .eq("path", selectedPath)
-      .maybeSingle();
-    selectedFile = (selectedData as SelectedFile | null) ?? null;
+    const row = await getProjectFileByPath(id, user.id, selectedPath);
+    if (row) {
+      const mapped = mapProjectFile(row);
+      selectedFile = {
+        id: mapped.id,
+        path: mapped.path,
+        language: mapped.language,
+        size_bytes: mapped.size_bytes,
+        updated_at: mapped.updated_at,
+        content: mapped.content,
+      };
+    }
   }
 
-  const typedProject = project as Project;
-  const mobileProject = toMobileProject(typedProject, id);
-  const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
-    toMobileProject(item, id),
-  );
-  const mobileFiles = files.map(toMobileFileDetail);
+  const mobileProject = toMobileProject(project, id);
+  const mobileProjects = allProjects.map((item) => toMobileProject(item, id));
+  const mobileFiles = fileList.map(toMobileFileDetail);
   const mobileSelectedFile = selectedFile
     ? { ...toMobileFileDetail(selectedFile), content: selectedFile.content }
     : null;
-  const mobileRunSession = latestRunData
-    ? toMobileRunSession(latestRunData as LatestRunSession)
+  const mobileRunSession = latestRun[0]
+    ? toMobileRunSession(mapRunSession(latestRun[0]))
     : null;
 
   return (
@@ -136,12 +125,12 @@ export default async function FilesPage({
           projects={mobileProjects}
           profile={{
             email: user.email ?? "",
-            displayName: profileData?.display_name ?? null,
+            displayName: displayName,
           }}
           runSession={mobileRunSession}
-          filesCount={files.length}
+          filesCount={fileList.length}
           title="View code"
-          subtitle={typedProject.name}
+          subtitle={project.name}
           chatHref={`/projects/${id}`}
         >
           <MobileFilesScreen
@@ -158,11 +147,7 @@ export default async function FilesPage({
           description="Browse the code saved for this project."
         />
 
-        {error ? (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-            {error.message}
-          </div>
-        ) : files.length === 0 ? (
+        {fileList.length === 0 ? (
           <Empty className="border border-dashed border-border bg-card/40">
             <EmptyHeader>
               <EmptyMedia variant="icon">
@@ -182,11 +167,11 @@ export default async function FilesPage({
                   Saved files
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {files.length} file{files.length === 1 ? "" : "s"}
+                  {fileList.length} file{fileList.length === 1 ? "" : "s"}
                 </span>
               </div>
               <ul className="max-h-[70vh] divide-y divide-border overflow-auto">
-                {files.map((file) => {
+                {fileList.map((file) => {
                   const active = file.path === selectedPath;
                   return (
                     <li key={file.id}>
@@ -252,16 +237,6 @@ export default async function FilesPage({
   );
 }
 
-type LatestRunSession = {
-  id: string;
-  status: RunStatus;
-  preview_url: string | null;
-  started_at: string | null;
-  stopped_at: string | null;
-  created_at: string;
-  error: string | null;
-};
-
 function toMobileProject(
   project: Project,
   currentProjectId: string,
@@ -290,10 +265,18 @@ function toMobileFileDetail(file: FileListItem): MobileFileDetail {
   };
 }
 
-function toMobileRunSession(session: LatestRunSession): MobileRunSession {
+function toMobileRunSession(session: {
+  id: string;
+  status: string;
+  preview_url: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  created_at: string;
+  error: string | null;
+}): MobileRunSession {
   return {
     id: session.id,
-    status: session.status,
+    status: session.status as RunStatus,
     previewUrl: session.preview_url,
     error: session.error,
     createdLabel: formatRelative(session.created_at),

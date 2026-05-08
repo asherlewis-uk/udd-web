@@ -1,5 +1,17 @@
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import {
+  getProjectByIdAndOwner,
+  countLiveRunSessions,
+  getRunSessionById,
+  insertRunSession,
+  updateRunSession,
+  getStaleRunSessions,
+  insertRunEvent,
+  updateProject,
+} from "@/lib/db/queries";
+import { getDb } from "@/lib/db";
+import * as schema from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import {
   analyzeFile,
   formatBytes,
@@ -19,49 +31,32 @@ import {
  */
 
 export async function startRun(projectId: string): Promise<string> {
-  const supabase = await createClient();
-
   const authSession = await getSession();
   if (!authSession) throw new Error("Not authenticated");
   const user = authSession.user;
 
   // Confirm the project exists and belongs to the caller (RLS also enforces this).
-  const { data: project, error: projectError } = await supabase
-    .from("projects")
-    .select("id, slug, owner_id")
-    .eq("id", projectId)
-    .single();
-  if (projectError || !project) throw new Error("Project not found");
+  const project = await getProjectByIdAndOwner(projectId, user.id);
+  if (!project) throw new Error("Project not found");
 
-  const { data: activeSessions } = await supabase
-    .from("run_sessions")
-    .select("id, status")
-    .eq("project_id", projectId)
-    .eq("owner_id", user.id)
-    .in("status", ["starting", "running", "stopping"])
-    .limit(1);
-  if (activeSessions && activeSessions.length > 0) {
+  const activeCount = await countLiveRunSessions(projectId, user.id);
+  if (activeCount > 0) {
     throw new Error(
       "A run is already active for this project. Stop it before starting another.",
     );
   }
 
-  const { data: runSession, error: sessionError } = await supabase
-    .from("run_sessions")
-    .insert({
-      project_id: projectId,
-      owner_id: user.id,
-      status: "starting",
-      preview_url: null,
-      error: null,
-      started_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-  if (sessionError || !runSession)
-    throw new Error(sessionError?.message ?? "Failed to start run");
+  const runSession = await insertRunSession({
+    projectId,
+    ownerId: user.id,
+    status: "starting",
+    previewUrl: null,
+    error: null,
+    startedAt: new Date(),
+  });
+  if (!runSession) throw new Error("Failed to start run");
 
-  await writeEvent(supabase, {
+  await writeEvent({
     session_id: runSession.id,
     project_id: projectId,
     owner_id: user.id,
@@ -70,11 +65,10 @@ export async function startRun(projectId: string): Promise<string> {
     message: "Run requested.",
   });
 
-  await supabase
-    .from("projects")
-    .update({ status: "active", last_opened_at: new Date().toISOString() })
-    .eq("id", projectId)
-    .eq("owner_id", user.id);
+  await updateProject(projectId, user.id, {
+    status: "active",
+    lastOpenedAt: new Date(),
+  });
 
   return runSession.id;
 }
@@ -83,34 +77,28 @@ export async function startRun(projectId: string): Promise<string> {
  * Stop a currently-running session. Transitions running → stopping → stopped.
  */
 export async function stopRun(sessionId: string): Promise<void> {
-  const supabase = await createClient();
   const authSession = await getSession();
   if (!authSession) throw new Error("Not authenticated");
   const user = authSession.user;
 
-  const { data: runSession } = await supabase
-    .from("run_sessions")
-    .select("id, project_id, owner_id, status")
-    .eq("id", sessionId)
-    .eq("owner_id", user.id)
-    .single();
+  const runSession = await getRunSessionById(sessionId, user.id);
   if (!runSession) return;
-  if (!(runSession.status === "running" || runSession.status === "starting")) return;
+  if (!(runSession.status === "running" || runSession.status === "starting"))
+    return;
 
   // running/starting → stopping. Conditional so a concurrent stop or an
   // error-path terminal write can't be silently reversed.
-  const { data: toStopping } = await supabase
-    .from("run_sessions")
-    .update({ status: "stopping" })
-    .eq("id", sessionId)
-    .eq("owner_id", user.id)
-    .in("status", ["running", "starting"])
-    .select("id");
-  if (!toStopping || toStopping.length === 0) return;
+  const toStopping = await updateRunSession(
+    sessionId,
+    user.id,
+    { status: "stopping" },
+    runSession.status,
+  );
+  if (!toStopping) return;
 
-  await writeEvent(supabase, {
+  await writeEvent({
     session_id: sessionId,
-    project_id: runSession.project_id as string,
+    project_id: runSession.projectId,
     owner_id: user.id,
     level: "system",
     source: "system",
@@ -120,23 +108,22 @@ export async function stopRun(sessionId: string): Promise<void> {
   await stopNextDevPreview(sessionId);
 
   // stopping → stopped. Conditional for the same reason as above.
-  const { data: toStopped } = await supabase
-    .from("run_sessions")
-    .update({
+  const toStopped = await updateRunSession(
+    sessionId,
+    user.id,
+    {
       status: "stopped",
-      stopped_at: new Date().toISOString(),
-      preview_url: null,
+      stoppedAt: new Date(),
+      previewUrl: null,
       error: null,
-    })
-    .eq("id", sessionId)
-    .eq("owner_id", user.id)
-    .eq("status", "stopping")
-    .select("id");
-  if (!toStopped || toStopped.length === 0) return;
+    },
+    "stopping",
+  );
+  if (!toStopped) return;
 
-  await writeEvent(supabase, {
+  await writeEvent({
     session_id: sessionId,
-    project_id: runSession.project_id as string,
+    project_id: runSession.projectId,
     owner_id: user.id,
     level: "system",
     source: "system",
@@ -149,21 +136,20 @@ export async function stopRun(sessionId: string): Promise<void> {
  * per-file results. Scheduled from the server action via `after()`.
  */
 export async function driveSession(sessionId: string): Promise<void> {
-  const supabase = await createClient();
-
-  const { data: session, error } = await supabase
-    .from("run_sessions")
-    .select("id, project_id, owner_id, status, projects(slug, name)")
-    .eq("id", sessionId)
-    .single();
-  if (error || !session) return;
+  const rows = await getDb()
+    .select()
+    .from(schema.runSessions)
+    .where(eq(schema.runSessions.id, sessionId))
+    .limit(1);
+  const session = rows[0];
+  if (!session) return;
   if (session.status !== "starting") return;
 
-  const ownerId = session.owner_id as string;
-  const projectId = session.project_id as string;
+  const ownerId = session.ownerId;
+  const projectId = session.projectId;
 
   try {
-    const files = await loadProjectFiles(supabase, projectId, ownerId);
+    const files = await loadProjectFiles(projectId, ownerId);
 
     if (files.length === 0) {
       throw new Error(
@@ -176,7 +162,7 @@ export async function driveSession(sessionId: string): Promise<void> {
       0,
     );
 
-    await writeEvent(supabase, {
+    await writeEvent({
       session_id: sessionId,
       project_id: projectId,
       owner_id: ownerId,
@@ -192,7 +178,7 @@ export async function driveSession(sessionId: string): Promise<void> {
       const result = analyzeFile(file);
       if (result.ok) {
         okCount += 1;
-        await writeEvent(supabase, {
+        await writeEvent({
           session_id: sessionId,
           project_id: projectId,
           owner_id: ownerId,
@@ -202,7 +188,7 @@ export async function driveSession(sessionId: string): Promise<void> {
         });
       } else {
         errorCount += 1;
-        await writeEvent(supabase, {
+        await writeEvent({
           session_id: sessionId,
           project_id: projectId,
           owner_id: ownerId,
@@ -217,19 +203,16 @@ export async function driveSession(sessionId: string): Promise<void> {
       const message = `Validation failed - ${errorCount} of ${files.length} file${files.length === 1 ? "" : "s"} did not parse.`;
       // Only terminalize if we're still the active driver — avoid stomping
       // on a concurrent stop that already moved the session to stopped.
-      await supabase
-        .from("run_sessions")
-        .update({
-          status: "error",
-          error: message,
-          stopped_at: new Date().toISOString(),
-          preview_url: null,
-        })
-        .eq("id", sessionId)
-        .eq("owner_id", ownerId)
-        .in("status", ["starting", "running"]);
+      const terminalValues = {
+        status: "error" as const,
+        error: message,
+        stoppedAt: new Date(),
+        previewUrl: null,
+      };
+      await updateRunSession(sessionId, ownerId, terminalValues, "starting");
+      await updateRunSession(sessionId, ownerId, terminalValues, "running");
 
-      await writeEvent(supabase, {
+      await writeEvent({
         session_id: sessionId,
         project_id: projectId,
         owner_id: ownerId,
@@ -242,7 +225,7 @@ export async function driveSession(sessionId: string): Promise<void> {
 
     // All files parsed. The parser gate is still first: no runtime process
     // starts unless saved files parse cleanly.
-    await writeEvent(supabase, {
+    await writeEvent({
       session_id: sessionId,
       project_id: projectId,
       owner_id: ownerId,
@@ -251,19 +234,14 @@ export async function driveSession(sessionId: string): Promise<void> {
       message: `Validation passed - ${okCount} file${okCount === 1 ? "" : "s"} parsed cleanly.`,
     });
 
-    const { data: currentSession } = await supabase
-      .from("run_sessions")
-      .select("status")
-      .eq("id", sessionId)
-      .eq("owner_id", ownerId)
-      .single();
+    const currentSession = await getRunSessionById(sessionId, ownerId);
     if (currentSession?.status !== "starting") {
       return;
     }
 
     const preview = await startNextDevPreview(sessionId, files, {
       onEvent: async (event) => {
-        await writeEvent(supabase, {
+        await writeEvent({
           session_id: sessionId,
           project_id: projectId,
           owner_id: ownerId,
@@ -273,22 +251,21 @@ export async function driveSession(sessionId: string): Promise<void> {
         });
       },
       onExit: async (event) => {
-        await handlePreviewExit(supabase, sessionId, projectId, ownerId, event);
+        await handlePreviewExit(sessionId, projectId, ownerId, event);
       },
     });
 
-    const { data: promoted } = await supabase
-      .from("run_sessions")
-      .update({
+    const promoted = await updateRunSession(
+      sessionId,
+      ownerId,
+      {
         status: "running",
-        preview_url: preview.previewUrl,
+        previewUrl: preview.previewUrl,
         error: null,
-      })
-      .eq("id", sessionId)
-      .eq("owner_id", ownerId)
-      .eq("status", "starting")
-      .select("id");
-    if (!promoted || promoted.length === 0) {
+      },
+      "starting",
+    );
+    if (!promoted) {
       // Lost the race — another driver already terminalized this session
       // (or the user stopped it). Stop the process we just started instead
       // of leaving an orphaned preview behind.
@@ -296,7 +273,7 @@ export async function driveSession(sessionId: string): Promise<void> {
       return;
     }
 
-    await writeEvent(supabase, {
+    await writeEvent({
       session_id: sessionId,
       project_id: projectId,
       owner_id: ownerId,
@@ -305,29 +282,25 @@ export async function driveSession(sessionId: string): Promise<void> {
       message: `Local preview ready at ${preview.previewUrl}.`,
     });
 
-    await supabase
-      .from("projects")
-      .update({ status: "active", last_opened_at: new Date().toISOString() })
-      .eq("id", projectId)
-      .eq("owner_id", ownerId);
+    await updateProject(projectId, ownerId, {
+      status: "active",
+      lastOpenedAt: new Date(),
+    });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Unknown runtime error";
     await stopNextDevPreview(sessionId);
     // Only terminalize if we're still the active driver — don't overwrite
     // a concurrent stop or a prior error already written by another driver.
-    await supabase
-      .from("run_sessions")
-      .update({
-        status: "error",
-        error: message,
-        stopped_at: new Date().toISOString(),
-        preview_url: null,
-      })
-      .eq("id", sessionId)
-      .eq("owner_id", ownerId)
-      .in("status", ["starting", "running"]);
-    await writeEvent(supabase, {
+    const terminalValues = {
+      status: "error" as const,
+      error: message,
+      stoppedAt: new Date(),
+      previewUrl: null,
+    };
+    await updateRunSession(sessionId, ownerId, terminalValues, "starting");
+    await updateRunSession(sessionId, ownerId, terminalValues, "running");
+    await writeEvent({
       session_id: sessionId,
       project_id: projectId,
       owner_id: ownerId,
@@ -350,77 +323,78 @@ export async function reapStaleSessions(
   projectId: string,
   ownerId: string,
 ): Promise<number> {
-  const supabase = await createClient();
-  const cutoff = new Date(Date.now() - STALE_SESSION_MS).toISOString();
+  const cutoff = new Date(Date.now() - STALE_SESSION_MS);
 
-  const { data: staleSessions } = await supabase
-    .from("run_sessions")
-    .select("id")
-    .eq("project_id", projectId)
-    .eq("owner_id", ownerId)
-    .in("status", ["starting", "running"])
-    .lt("started_at", cutoff);
+  const staleSessions = await getStaleRunSessions(projectId, ownerId, cutoff);
 
-  const staleIds = (staleSessions ?? []).map((session) => session.id as string);
+  const staleIds = staleSessions.map((session) => session.id);
   if (staleIds.length === 0) return 0;
 
   for (const sessionId of staleIds) {
     await stopNextDevPreview(sessionId);
   }
 
-  const { data } = await supabase
-    .from("run_sessions")
-    .update({
-      status: "error",
+  let reapedCount = 0;
+  for (const sessionId of staleIds) {
+    const terminalValues = {
+      status: "error" as const,
       error: "Session stalled — marked failed after timeout.",
-      stopped_at: new Date().toISOString(),
-      preview_url: null,
-    })
-    .eq("project_id", projectId)
-    .eq("owner_id", ownerId)
-    .in("status", ["starting", "running"])
-    .in("id", staleIds)
-    .select("id");
+      stoppedAt: new Date(),
+      previewUrl: null,
+    };
+    const updated =
+      (await updateRunSession(
+        sessionId,
+        ownerId,
+        terminalValues,
+        "starting",
+      )) ??
+      (await updateRunSession(
+        sessionId,
+        ownerId,
+        terminalValues,
+        "running",
+      ));
 
-  for (const session of data ?? []) {
-    await writeEvent(supabase, {
-      session_id: session.id as string,
-      project_id: projectId,
-      owner_id: ownerId,
-      level: "error",
-      source: "system",
-      message:
-        "Session timed out; local preview process and workspace were cleaned up.",
-    });
+    if (updated) {
+      await writeEvent({
+        session_id: sessionId,
+        project_id: projectId,
+        owner_id: ownerId,
+        level: "error",
+        source: "system",
+        message:
+          "Session timed out; local preview process and workspace were cleaned up.",
+      });
+      reapedCount++;
+    }
   }
 
-  return data?.length ?? 0;
+  return reapedCount;
 }
 
 async function handlePreviewExit(
-  supabase: Awaited<ReturnType<typeof createClient>>,
   sessionId: string,
   projectId: string,
   ownerId: string,
   event: PreviewExitEvent,
 ): Promise<void> {
   const message = `Local preview process exited (code ${event.code ?? "null"}, signal ${event.signal ?? "none"}).`;
-  const { data: updated } = await supabase
-    .from("run_sessions")
-    .update({
+  const updated = await updateRunSession(
+    sessionId,
+    ownerId,
+    {
       status: "error",
       error: message,
-      stopped_at: new Date().toISOString(),
-      preview_url: null,
-    })
-    .eq("id", sessionId)
-    .eq("owner_id", ownerId)
-    .eq("status", "running")
-    .select("id");
+      stoppedAt: new Date(),
+      previewUrl: null,
+    },
+    "running",
+  );
   await stopNextDevPreview(sessionId);
 
-  if (!updated || updated.length === 0) return;
-  await writeEvent(supabase, {
+  if (!updated) return;
+  await writeEvent({
     session_id: sessionId,
     project_id: projectId,
     owner_id: ownerId,
@@ -439,9 +413,13 @@ type EventInput = {
   message: string;
 };
 
-async function writeEvent(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  input: EventInput,
-): Promise<void> {
-  await supabase.from("run_events").insert(input);
+async function writeEvent(input: EventInput): Promise<void> {
+  await insertRunEvent({
+    sessionId: input.session_id,
+    projectId: input.project_id,
+    ownerId: input.owner_id,
+    level: input.level,
+    source: input.source,
+    message: input.message,
+  });
 }

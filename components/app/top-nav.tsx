@@ -1,22 +1,16 @@
 import Link from "next/link";
 import { Wordmark } from "@/components/brand";
 import { UserMenu } from "@/components/app/user-menu";
-import { createClient } from "@/lib/db/supabase-legacy";
 import { getSession } from "@/lib/auth-session";
+import { getProfileDisplayName } from "@/lib/db/queries";
 
 export async function TopNav() {
-  const supabase = await createClient();
   const session = await getSession();
   const user = session?.user ?? null;
 
   let displayName: string | null = null;
   if (user) {
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle();
-    displayName = profile?.display_name ?? null;
+    displayName = await getProfileDisplayName(user.id);
   }
 
   return (

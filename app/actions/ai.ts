@@ -4,7 +4,17 @@ import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import {
+  countLiveAITasks,
+  insertPrompt,
+  insertAITask,
+  updateProject,
+  getAITaskById,
+  cancelAITask as cancelAITaskDb,
+  deleteAITaskIfTerminal,
+  getAITaskEvents,
+} from "@/lib/db/queries";
+import { mapAITask, mapAITaskEvent } from "@/lib/db/mappers";
 import { runAITask } from "@/lib/ai/service";
 import { classifyPrompt } from "@/lib/ai/classify";
 import {
@@ -22,11 +32,10 @@ import type {
 } from "@/lib/ai/types";
 
 async function getUser() {
-  const supabase = await createClient();
   const session = await getSession();
   if (!session) throw new Error("Not authenticated");
   const user = session.user;
-  return { supabase, user };
+  return { user };
 }
 
 /**
@@ -38,18 +47,9 @@ async function getUser() {
  */
 const MAX_LIVE_TASKS_PER_USER = 3;
 
-async function enforceConcurrencyLimit(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  ownerId: string,
-): Promise<void> {
-  const { count, error } = await supabase
-    .from("ai_tasks")
-    .select("id", { count: "exact", head: true })
-    .eq("owner_id", ownerId)
-    .in("status", ["pending", "running"]);
-
-  if (error) throw new Error(error.message);
-  if ((count ?? 0) >= MAX_LIVE_TASKS_PER_USER) {
+async function enforceConcurrencyLimit(ownerId: string): Promise<void> {
+  const count = await countLiveAITasks(ownerId);
+  if (count >= MAX_LIVE_TASKS_PER_USER) {
     throw new Error(
       `You already have ${count} generation runs in progress. Wait for them to finish (or cancel one) before starting another.`,
     );
@@ -70,47 +70,36 @@ export async function createAITask(formData: FormData) {
   if (prompt.length > 4000)
     throw new Error("Prompt is too long (max 4000 chars)");
 
-  const { supabase, user } = await getUser();
+  const { user } = await getUser();
 
   // 0. Rate-limit: reject if the user has too many live tasks. Runs first
   //    so we don't create a prompt row we'll never process.
-  await enforceConcurrencyLimit(supabase, user.id);
+  await enforceConcurrencyLimit(user.id);
 
   // 1. Persist the prompt.
-  const { data: promptRow, error: promptError } = await supabase
-    .from("prompts")
-    .insert({
-      project_id: projectId,
-      owner_id: user.id,
-      body: prompt,
-    })
-    .select("id")
-    .single();
-  if (promptError) throw new Error(promptError.message);
+  const promptRow = await insertPrompt({
+    projectId,
+    ownerId: user.id,
+    body: prompt,
+  });
 
   // 2. Create the task in pending state.
   const { kind, title } = classifyPrompt(prompt);
-  const { data: taskRow, error: taskError } = await supabase
-    .from("ai_tasks")
-    .insert({
-      project_id: projectId,
-      owner_id: user.id,
-      prompt_id: promptRow.id,
-      kind,
-      title,
-      status: "pending",
-      input: { prompt },
-    })
-    .select("id")
-    .single();
-  if (taskError) throw new Error(taskError.message);
+  const taskRow = await insertAITask({
+    projectId,
+    ownerId: user.id,
+    promptId: promptRow.id,
+    kind,
+    title,
+    status: "pending",
+    input: { prompt },
+  });
 
   // 3. Touch the parent project so activity surfaces on the list immediately.
-  await supabase
-    .from("projects")
-    .update({ status: "active", last_opened_at: new Date().toISOString() })
-    .eq("id", projectId)
-    .eq("owner_id", user.id);
+  await updateProject(projectId, user.id, {
+    status: "active",
+    lastOpenedAt: new Date(),
+  });
 
   // 4. Schedule processing after the response is flushed so the UI
   //    returns immediately and the real model call runs in the background.
@@ -133,14 +122,11 @@ export async function createAITask(formData: FormData) {
  * `after()` invocation didn't complete (e.g. server restart).
  */
 export async function retryPendingTask(taskId: string, projectId: string) {
-  const { supabase, user } = await getUser();
-  const { data } = await supabase
-    .from("ai_tasks")
-    .select("id, status")
-    .eq("id", taskId)
-    .eq("owner_id", user.id)
-    .single();
-  if (!data || data.status !== "pending") return;
+  const { user } = await getUser();
+  const raw = await getAITaskById(taskId, user.id);
+  if (!raw) return;
+  const task = mapAITask(raw);
+  if (task.status !== "pending") return;
 
   after(async () => {
     await runAITask(taskId);
@@ -160,18 +146,8 @@ export async function cancelAITask(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim();
   if (!taskId || !projectId) throw new Error("Missing task id or project id");
 
-  const { supabase, user } = await getUser();
-
-  await supabase
-    .from("ai_tasks")
-    .update({
-      status: "cancelled",
-      error: "Cancelled by user.",
-      finished_at: new Date().toISOString(),
-    })
-    .eq("id", taskId)
-    .eq("owner_id", user.id)
-    .in("status", ["pending", "running"]);
+  const { user } = await getUser();
+  await cancelAITaskDb(taskId, user.id);
 
   revalidatePath(`/projects/${projectId}/ai`);
 }
@@ -187,14 +163,8 @@ export async function deleteAITask(formData: FormData) {
   const projectId = String(formData.get("project_id") ?? "").trim();
   if (!taskId || !projectId) throw new Error("Missing task id or project id");
 
-  const { supabase, user } = await getUser();
-
-  await supabase
-    .from("ai_tasks")
-    .delete()
-    .eq("id", taskId)
-    .eq("owner_id", user.id)
-    .in("status", ["completed", "failed", "cancelled"]);
+  const { user } = await getUser();
+  await deleteAITaskIfTerminal(taskId, user.id);
 
   revalidatePath(`/projects/${projectId}/ai`);
   redirect(`/projects/${projectId}/ai`);
@@ -212,39 +182,28 @@ export async function retryFailedTask(formData: FormData) {
   const redirectTo = String(formData.get("redirect_to") ?? "").trim();
   if (!taskId || !projectId) throw new Error("Missing task id or project id");
 
-  const { supabase, user } = await getUser();
+  const { user } = await getUser();
 
   // Rate-limit retries for the same reason as creation — a user with many
   // failed tasks could otherwise queue them all at once.
-  await enforceConcurrencyLimit(supabase, user.id);
+  await enforceConcurrencyLimit(user.id);
 
-  const { data: original } = await supabase
-    .from("ai_tasks")
-    .select("id, project_id, prompt_id, kind, title, input, status")
-    .eq("id", taskId)
-    .eq("owner_id", user.id)
-    .single();
-  if (!original) throw new Error("Task not found");
+  const originalRaw = await getAITaskById(taskId, user.id);
+  if (!originalRaw) throw new Error("Task not found");
+  const original = mapAITask(originalRaw);
   if (original.status !== "failed" && original.status !== "cancelled") {
     throw new Error("Only failed or cancelled tasks can be retried.");
   }
 
-  const { data: fresh, error: insertError } = await supabase
-    .from("ai_tasks")
-    .insert({
-      project_id: original.project_id,
-      owner_id: user.id,
-      prompt_id: original.prompt_id,
-      kind: original.kind,
-      title: original.title,
-      status: "pending",
-      input: original.input,
-    })
-    .select("id")
-    .single();
-  if (insertError || !fresh) {
-    throw new Error(insertError?.message ?? "Failed to create retry task");
-  }
+  const fresh = await insertAITask({
+    projectId: original.project_id,
+    ownerId: user.id,
+    promptId: original.prompt_id,
+    kind: original.kind as AITaskKind,
+    title: original.title,
+    status: "pending",
+    input: original.input,
+  });
 
   after(async () => {
     await runAITask(fresh.id);
@@ -272,35 +231,20 @@ export async function repairFailedTask(formData: FormData) {
   const redirectTo = String(formData.get("redirect_to") ?? "").trim();
   if (!taskId || !projectId) throw new Error("Missing task id or project id");
 
-  const { supabase, user } = await getUser();
+  const { user } = await getUser();
 
-  await enforceConcurrencyLimit(supabase, user.id);
+  await enforceConcurrencyLimit(user.id);
 
-  const { data: original, error: originalError } = await supabase
-    .from("ai_tasks")
-    .select("id, project_id, kind, title, status, input, output, error")
-    .eq("id", taskId)
-    .eq("project_id", projectId)
-    .eq("owner_id", user.id)
-    .single();
-  if (originalError || !original) {
-    throw new Error(originalError?.message ?? "Task not found");
-  }
+  const originalRaw = await getAITaskById(taskId, user.id);
+  if (!originalRaw) throw new Error("Task not found");
+  const original = mapAITask(originalRaw);
   if (original.status !== "failed") {
     throw new Error("Only failed tasks can be repaired.");
   }
 
-  const { data: validationEvents, error: eventsError } = await supabase
-    .from("ai_task_events")
-    .select("payload")
-    .eq("task_id", taskId)
-    .eq("owner_id", user.id)
-    .eq("kind", "validation")
-    .order("created_at", { ascending: true });
-  if (eventsError) throw new Error(eventsError.message);
-
+  const validationEventsRaw = await getAITaskEvents(taskId, user.id, { kind: "validation" });
   const evidence = extractRepairEvidence(
-    (validationEvents ?? []) as ValidationEventRow[],
+    validationEventsRaw.map(mapAITaskEvent) as ValidationEventRow[],
   );
   if (evidence.blockingIssues.length === 0) {
     throw new Error(
@@ -336,43 +280,32 @@ export async function repairFailedTask(formData: FormData) {
   const displayPrompt = buildRepairDisplayPrompt(sourceTitle);
   const repairKind = repairTaskKindFor(sourceKind);
 
-  const { data: fresh, error: insertError } = await supabase
-    .from("ai_tasks")
-    .insert({
-      project_id: projectId,
-      owner_id: user.id,
-      kind: repairKind,
-      title: buildRepairTaskTitle(sourceTitle),
-      status: "pending",
-      input: {
-        prompt: repairPrompt,
-        display_prompt: displayPrompt,
-        repair: {
-          source_task_id: taskId,
-          source_task_kind: sourceKind,
-          source_task_title: sourceTitle,
-          source_task_error:
-            typeof original.error === "string" ? original.error : null,
-          validation_summary: evidence.summary,
-          blocking_issues: evidence.blockingIssues,
-          generated_file_paths: originalOutput.files.map((file) => file.path),
-        },
+  const fresh = await insertAITask({
+    projectId,
+    ownerId: user.id,
+    kind: repairKind,
+    title: buildRepairTaskTitle(sourceTitle),
+    status: "pending",
+    input: {
+      prompt: repairPrompt,
+      display_prompt: displayPrompt,
+      repair: {
+        source_task_id: taskId,
+        source_task_kind: sourceKind,
+        source_task_title: sourceTitle,
+        source_task_error:
+          typeof original.error === "string" ? original.error : null,
+        validation_summary: evidence.summary,
+        blocking_issues: evidence.blockingIssues,
+        generated_file_paths: originalOutput.files.map((file) => file.path),
       },
-    })
-    .select("id")
-    .single();
-  if (insertError || !fresh) {
-    throw new Error(insertError?.message ?? "Failed to create repair task");
-  }
+    },
+  });
 
-  await supabase
-    .from("projects")
-    .update({
-      status: "active",
-      last_opened_at: new Date().toISOString(),
-    })
-    .eq("id", projectId)
-    .eq("owner_id", user.id);
+  await updateProject(projectId, user.id, {
+    status: "active",
+    lastOpenedAt: new Date(),
+  });
 
   after(async () => {
     await runAITask(fresh.id);

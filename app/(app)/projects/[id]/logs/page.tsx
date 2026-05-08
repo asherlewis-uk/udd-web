@@ -17,7 +17,15 @@ import {
   type MobileConsoleEvent,
 } from "@/components/mobile/logs-screen";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import {
+  getProjectByIdAndOwner,
+  getProjectsForOwner,
+  getProfileDisplayName,
+  getRunSessionsForProject,
+  countProjectFiles,
+  getRunEventsForProject,
+} from "@/lib/db/queries";
+import { mapProject, mapProjectList, mapRunSession, mapRunEvent } from "@/lib/db/mappers";
 import { formatRelative } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import type { Project, RunStatus } from "@/lib/types";
@@ -39,74 +47,37 @@ export default async function LogsPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
 
-  // Resolve user up-front so the query can belt-and-braces the RLS check
-  // with an explicit owner filter. The (app) layout already redirects
-  // unauthenticated users, so notFound() here is purely defensive.
   const session = await getSession();
   if (!session) notFound();
   const user = session.user;
 
   const [
-    { data: project },
-    { data: allProjectsData },
-    { data: profileData },
-    { data: latestRunData },
-    { count: filesCount },
+    projectRaw,
+    allProjectsRaw,
+    displayName,
+    latestRun,
+    filesCount,
   ] = await Promise.all([
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("id", id)
-      .eq("owner_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("owner_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(30),
-    supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("run_sessions")
-      .select(
-        "id, status, preview_url, started_at, stopped_at, created_at, error",
-      )
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase
-      .from("project_files")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", id)
-      .eq("owner_id", user.id),
+    getProjectByIdAndOwner(id, user.id),
+    getProjectsForOwner(user.id, { limit: 30 }),
+    getProfileDisplayName(user.id),
+    getRunSessionsForProject(id, user.id, { limit: 1 }),
+    countProjectFiles(id, user.id),
   ]);
 
-  if (!project) notFound();
+  if (!projectRaw) notFound();
 
-  const { data } = await supabase
-    .from("run_events")
-    .select("id, level, source, message, created_at")
-    .eq("project_id", id)
-    .eq("owner_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const project = mapProject(projectRaw) as Project;
+  const allProjects = mapProjectList(allProjectsRaw) as Project[];
 
-  const events = (data ?? []).slice().reverse();
-  const typedProject = project as Project;
-  const mobileProject = toMobileProject(typedProject, id);
-  const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
-    toMobileProject(item, id),
-  );
-  const mobileRunSession = latestRunData
-    ? toMobileRunSession(latestRunData as LatestRunSession)
+  const eventRows = await getRunEventsForProject(id, user.id, { limit: 200 });
+  const events = eventRows.map(mapRunEvent).slice().reverse();
+
+  const mobileProject = toMobileProject(project, id);
+  const mobileProjects = allProjects.map((item) => toMobileProject(item, id));
+  const mobileRunSession = latestRun[0]
+    ? toMobileRunSession(mapRunSession(latestRun[0]))
     : null;
   const mobileEvents = events.map(toMobileConsoleEvent);
 
@@ -118,12 +89,12 @@ export default async function LogsPage({
           projects={mobileProjects}
           profile={{
             email: user.email ?? "",
-            displayName: profileData?.display_name ?? null,
+            displayName: displayName,
           }}
           runSession={mobileRunSession}
-          filesCount={filesCount ?? 0}
+          filesCount={filesCount}
           title="Console"
-          subtitle={typedProject.name}
+          subtitle={project.name}
           chatHref={`/projects/${id}`}
         >
           <MobileLogsScreen events={mobileEvents} />
@@ -189,24 +160,6 @@ export default async function LogsPage({
   );
 }
 
-type LatestRunSession = {
-  id: string;
-  status: RunStatus;
-  preview_url: string | null;
-  started_at: string | null;
-  stopped_at: string | null;
-  created_at: string;
-  error: string | null;
-};
-
-type RunEvent = {
-  id: string;
-  level: string;
-  source: string;
-  message: string;
-  created_at: string;
-};
-
 function toMobileProject(
   project: Project,
   currentProjectId: string,
@@ -225,10 +178,18 @@ function toMobileProject(
   };
 }
 
-function toMobileRunSession(session: LatestRunSession): MobileRunSession {
+function toMobileRunSession(session: {
+  id: string;
+  status: string;
+  preview_url: string | null;
+  started_at: string | null;
+  stopped_at: string | null;
+  created_at: string;
+  error: string | null;
+}): MobileRunSession {
   return {
     id: session.id,
-    status: session.status,
+    status: session.status as RunStatus,
     previewUrl: session.preview_url,
     error: session.error,
     createdLabel: formatRelative(session.created_at),
@@ -241,7 +202,13 @@ function toMobileRunSession(session: LatestRunSession): MobileRunSession {
   };
 }
 
-function toMobileConsoleEvent(event: RunEvent): MobileConsoleEvent {
+function toMobileConsoleEvent(event: {
+  id: string;
+  level: string;
+  source: string;
+  message: string;
+  created_at: string;
+}): MobileConsoleEvent {
   return {
     id: event.id,
     level: event.level,

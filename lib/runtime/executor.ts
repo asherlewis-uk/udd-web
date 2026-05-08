@@ -1,5 +1,8 @@
 import { parse as babelParse } from "@babel/parser"
-import { createClient } from "@/lib/db/supabase-legacy"
+import {
+  getProjectFilesForProject,
+  getLatestAITaskOutputForProject,
+} from "@/lib/db/queries"
 
 /**
  * Minimal execution service: rather than a fake "booting / installing / ready"
@@ -26,45 +29,27 @@ export type AnalyzeResult = {
   bytes: number
 }
 
-type SupabaseClient = Awaited<ReturnType<typeof createClient>>
-
 /**
  * Load all files for a project. Prefers the canonical `project_files` table;
  * falls back to the most recent completed AI task's output if the table is
  * empty for this project (useful right after the first AI run).
  */
 export async function loadProjectFiles(
-  supabase: SupabaseClient,
   projectId: string,
   ownerId: string,
 ): Promise<ExecFile[]> {
-  const { data: rows, error } = await supabase
-    .from("project_files")
-    .select("path, content, language")
-    .eq("project_id", projectId)
-    .eq("owner_id", ownerId)
-    .order("path", { ascending: true })
+  const rows = await getProjectFilesForProject(projectId, ownerId, { orderByPath: true })
 
-  if (error) throw new Error(error.message)
-
-  if (rows && rows.length > 0) {
+  if (rows.length > 0) {
     return rows.map((r) => ({
-      path: r.path as string,
-      content: (r.content as string) ?? "",
-      language: (r.language as string | null) ?? null,
+      path: r.path,
+      content: r.content ?? "",
+      language: r.language ?? null,
     }))
   }
 
   // Fallback — latest completed AI task output.
-  const { data: latestTask } = await supabase
-    .from("ai_tasks")
-    .select("output, finished_at")
-    .eq("project_id", projectId)
-    .eq("owner_id", ownerId)
-    .eq("status", "completed")
-    .order("finished_at", { ascending: false })
-    .limit(1)
-    .maybeSingle()
+  const latestTask = await getLatestAITaskOutputForProject(projectId, ownerId)
 
   const output = latestTask?.output as
     | { files?: Array<{ path?: string; content?: string; language?: string }> }

@@ -11,7 +11,15 @@ import { PreviewPanel } from "@/components/run/preview-panel";
 import { SessionsHistory } from "@/components/run/sessions-history";
 import { MobilePreviewRouteScreen } from "@/components/mobile/preview-route-screen";
 import { getSession } from "@/lib/auth-session";
-import { createClient } from "@/lib/db/supabase-legacy";
+import {
+  getProjectByIdAndOwner,
+  getProjectsForOwner,
+  getProfileDisplayName,
+  getRunSessionsForProject,
+  countProjectFiles,
+  getRunEventsForSession,
+} from "@/lib/db/queries";
+import { mapProject, mapProjectList, mapRunSession, mapRunEvent } from "@/lib/db/mappers";
 import { formatRelative } from "@/lib/slug";
 import { reapStaleSessions } from "@/lib/runtime/service";
 import type { Project, RunStatus } from "@/lib/types";
@@ -28,118 +36,62 @@ export default async function RunPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const supabase = await createClient();
 
-  // Resolve user up-front so every query can belt-and-braces the RLS check
-  // with an explicit owner filter. The (app) layout already redirects
-  // unauthenticated users, so notFound() here is purely defensive.
   const session = await getSession();
   if (!session) notFound();
   const user = session.user;
 
   const [
-    { data: project },
-    { data: allProjectsData },
-    { data: profileData },
+    projectRaw,
+    allProjectsRaw,
+    displayName,
   ] = await Promise.all([
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("id", id)
-      .eq("owner_id", user.id)
-      .maybeSingle(),
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("owner_id", user.id)
-      .order("updated_at", { ascending: false })
-      .limit(30),
-    supabase
-      .from("profiles")
-      .select("display_name")
-      .eq("id", user.id)
-      .maybeSingle(),
+    getProjectByIdAndOwner(id, user.id),
+    getProjectsForOwner(user.id, { limit: 30 }),
+    getProfileDisplayName(user.id),
   ]);
-  if (!project) notFound();
+  if (!projectRaw) notFound();
 
-  // Opportunistically mark any long-stalled sessions as error before loading
-  // the list. This keeps the UI honest without requiring a background job.
   await reapStaleSessions(id, user.id);
 
-  const [{ data: sessionsData }, { count: filesCount }] = await Promise.all([
-    supabase
-      .from("run_sessions")
-      .select(
-        "id, status, preview_url, started_at, stopped_at, created_at, error",
-      )
-      .eq("project_id", id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(20),
-    supabase
-      .from("project_files")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", id)
-      .eq("owner_id", user.id),
+  const project = mapProject(projectRaw) as Project;
+  const allProjects = mapProjectList(allProjectsRaw) as Project[];
+
+  const [sessionRows, filesCount] = await Promise.all([
+    getRunSessionsForProject(id, user.id, { limit: 20 }),
+    countProjectFiles(id, user.id),
   ]);
 
-  const sessions = (sessionsData ?? []) as Array<{
-    id: string;
-    status: RunStatus;
-    preview_url: string | null;
-    started_at: string | null;
-    stopped_at: string | null;
-    created_at: string;
-    error: string | null;
-  }>;
-
+  const sessions = sessionRows.map(mapRunSession);
   const current = sessions[0] ?? null;
-  const status: RunStatus = current?.status ?? "idle";
+  const status: RunStatus = current?.status as RunStatus ?? "idle";
 
-  // Events for the current session (not the whole project) so the log panel
-  // tracks this run specifically.
-  const { data: eventsData } = current
-    ? await supabase
-        .from("run_events")
-        .select("id, level, source, message, created_at")
-        .eq("session_id", current.id)
-        .eq("owner_id", user.id)
-        .order("created_at", { ascending: true })
-        .limit(300)
-    : { data: [] as never[] };
-
-  const events = (eventsData ?? []) as Array<{
-    id: string;
-    level: string;
-    source: string;
-    message: string;
-    created_at: string;
-  }>;
+  const eventRows = current
+    ? await getRunEventsForSession(current.id, user.id, { limit: 300 })
+    : [];
+  const events = eventRows.map(mapRunEvent);
 
   const inFlight =
     status === "starting" || status === "running" || status === "stopping";
 
   const mobileSession = current ? toMobileRunSession(current) : null;
   const mobileEvents = events.map(toMobileRunEvent);
-  const typedProject = project as Project;
-  const mobileProject = toMobileProject(typedProject, id);
-  const mobileProjects = ((allProjectsData ?? []) as Project[]).map((item) =>
-    toMobileProject(item, id),
-  );
+  const mobileProject = toMobileProject(project, id);
+  const mobileProjects = allProjects.map((item) => toMobileProject(item, id));
   const mobileProfile: MobileProfile = {
     email: user.email ?? "",
-    displayName: profileData?.display_name ?? null,
+    displayName: displayName,
   };
 
   return (
     <>
       <MobilePreviewRouteScreen
         projectId={id}
-        projectName={typedProject.name}
+        projectName={project.name}
         project={mobileProject}
         projects={mobileProjects}
         profile={mobileProfile}
-        filesCount={filesCount ?? 0}
+        filesCount={filesCount}
         session={mobileSession}
         events={mobileEvents}
       />
@@ -164,7 +116,7 @@ export default async function RunPage({
           <div className="lg:col-span-3">
             <PreviewPanel
               status={status}
-              projectName={typedProject.name}
+              projectName={project.name}
               previewUrl={current?.preview_url ?? null}
               error={current?.error ?? null}
             />
@@ -186,7 +138,7 @@ export default async function RunPage({
             <span className="px-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
               Recent sessions
             </span>
-            <SessionsHistory sessions={sessions.slice(1)} />
+            <SessionsHistory sessions={sessions.slice(1).map((s) => ({ ...s, status: s.status as RunStatus }))} />
           </section>
         ) : null}
 
@@ -216,7 +168,7 @@ function toMobileProject(
 
 function toMobileRunSession(session: {
   id: string;
-  status: RunStatus;
+  status: string;
   preview_url: string | null;
   started_at: string | null;
   stopped_at: string | null;
@@ -225,7 +177,7 @@ function toMobileRunSession(session: {
 }): MobileRunSession {
   return {
     id: session.id,
-    status: session.status,
+    status: session.status as RunStatus,
     previewUrl: session.preview_url,
     error: session.error,
     createdLabel: formatRelative(session.created_at),

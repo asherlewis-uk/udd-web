@@ -1,8 +1,6 @@
 import "server-only"
-import { createClient } from "@/lib/db/supabase-legacy"
+import { getUserSecret, upsertUserSecret, deleteUserSecret } from "@/lib/db/queries"
 import { encrypt, decrypt } from "./crypto"
-
-const TABLE = "user_secrets"
 
 export type SecretStatus = "missing" | "valid" | "invalid"
 
@@ -12,15 +10,8 @@ export async function saveSecret(
   name: string,
   value: string,
 ): Promise<void> {
-  const supabase = await createClient()
-  const encrypted_value = encrypt(value)
-  const { error } = await supabase
-    .from(TABLE)
-    .upsert(
-      { owner_id: ownerId, kind, name, encrypted_value },
-      { onConflict: "owner_id,kind,name" },
-    )
-  if (error) throw new Error(`Failed to save secret: ${error.message}`)
+  const encryptedValue = encrypt(value)
+  await upsertUserSecret(ownerId, kind, name, encryptedValue)
 }
 
 export async function getSecret(
@@ -28,17 +19,10 @@ export async function getSecret(
   kind: string,
   name: string,
 ): Promise<string | null> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("encrypted_value")
-    .eq("owner_id", ownerId)
-    .eq("kind", kind)
-    .eq("name", name)
-    .maybeSingle()
-  if (error || !data) return null
+  const row = await getUserSecret(ownerId, kind, name)
+  if (!row) return null
   try {
-    return decrypt(data.encrypted_value as string)
+    return decrypt(row.encryptedValue)
   } catch {
     console.warn("[v0] getSecret: decrypt failed", { kind, name })
     return null
@@ -50,21 +34,10 @@ export async function getSecretStatus(
   kind: string,
   name: string,
 ): Promise<SecretStatus> {
-  const supabase = await createClient()
-  const { data, error } = await supabase
-    .from(TABLE)
-    .select("encrypted_value")
-    .eq("owner_id", ownerId)
-    .eq("kind", kind)
-    .eq("name", name)
-    .maybeSingle()
-  if (error) {
-    console.warn("[v0] getSecretStatus: lookup failed", { kind, name, error: error.message })
-    return "missing"
-  }
-  if (!data) return "missing"
+  const row = await getUserSecret(ownerId, kind, name)
+  if (!row) return "missing"
   try {
-    decrypt(data.encrypted_value as string)
+    decrypt(row.encryptedValue)
     return "valid"
   } catch {
     console.warn("[v0] getSecretStatus: decrypt failed", { kind, name })
@@ -85,12 +58,5 @@ export async function deleteSecret(
   kind: string,
   name: string,
 ): Promise<void> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from(TABLE)
-    .delete()
-    .eq("owner_id", ownerId)
-    .eq("kind", kind)
-    .eq("name", name)
-  if (error) throw new Error(`Failed to delete secret: ${error.message}`)
+  await deleteUserSecret(ownerId, kind, name)
 }
