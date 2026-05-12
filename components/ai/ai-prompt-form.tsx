@@ -86,6 +86,7 @@ export function AIPromptForm({
       activeProvider?.credentialStatuses ?? {
         openai: "missing",
         anthropic: "missing",
+        ollama: "missing",
       },
     );
 

@@ -58,6 +58,7 @@ export function ProviderCredentialControl({
   const canSave = trimmedKey.length >= 20 && !disabled && !isPending;
   const stored = status === "valid";
   const invalid = status === "invalid";
+  const isOllama = providerId === "ollama";
 
   const handleSave = () => {
     if (!canSave) return;
@@ -121,7 +122,9 @@ export function ProviderCredentialControl({
         >
           <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
           {stored
-            ? "BYOK ready"
+            ? isOllama
+              ? "Local instance ready"
+              : "BYOK ready"
             : invalid
               ? "Credential needs replacement"
               : "Credential missing"}
@@ -193,7 +196,9 @@ export function ProviderCredentialControl({
       </div>
       {compact && stored ? (
         <span className="text-muted-foreground/75">
-          Saved key is used for new {providerLabel} tasks.
+          {isOllama
+            ? `${providerLabel} is running locally.`
+            : `Saved key is used for new ${providerLabel} tasks.`}
         </span>
       ) : compact && invalid ? (
         <span className="text-destructive/90">
@@ -201,12 +206,16 @@ export function ProviderCredentialControl({
         </span>
       ) : compact ? (
         <span className="text-muted-foreground/75">
-          Save a key here to use {providerLabel} without leaving the cockpit.
+          {isOllama
+            ? `No key needed — local ${providerLabel} instance.`
+            : `Save a key here to use ${providerLabel} without leaving the cockpit.`}
         </span>
       ) : (
         <span className="text-muted-foreground">
           {stored
-            ? `${providerLabel} has a saved key. The value is never shown after save.`
+            ? isOllama
+              ? `${providerLabel} is running locally. No API key needed.`
+              : `${providerLabel} has a saved key. The value is never shown after save.`
             : invalid
               ? `Saved ${providerLabel} key could not be read. Replace or delete it.`
               : `No ${providerLabel} key is saved. Add one to use BYOK for this provider.`}

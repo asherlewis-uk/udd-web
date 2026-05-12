@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ProviderCredentialControl } from "@/components/ai/provider-credential-control";
 import {
@@ -17,14 +18,21 @@ import { getProviderOptions, type ProviderId } from "@/lib/ai/providers";
 
 const PROVIDER_OPTIONS = getProviderOptions();
 
+type ProviderConfigRow = {
+  name: string;
+  config: unknown;
+};
+
 export function ProviderForm({
   currentProviderId,
   credentialStatuses,
   environmentCredentialAvailable,
+  providerConfigs,
 }: {
   currentProviderId: ProviderId | null;
   credentialStatuses: ProviderCredentialStatuses;
   environmentCredentialAvailable: boolean;
+  providerConfigs: ProviderConfigRow[];
 }) {
   // When nothing is saved, the Select visually shows "openai" but there is
   // no row in provider_configs yet. We track the baseline as-selected in
@@ -36,13 +44,41 @@ export function ProviderForm({
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
 
+  // Custom endpoint inputs per provider
+  const configMap = new Map(
+    providerConfigs.map((p) => {
+      const cfg =
+        p.config && typeof p.config === "object" && !Array.isArray(p.config)
+          ? (p.config as Record<string, unknown>)
+          : null;
+      return [p.name, cfg?.baseURL as string | undefined];
+    }),
+  );
+  const [endpoints, setEndpoints] = useState<Record<ProviderId, string>>(() => {
+    const initialEndpoints: Record<ProviderId, string> = {
+      openai: configMap.get("openai") ?? "",
+      anthropic: configMap.get("anthropic") ?? "",
+      ollama: configMap.get("ollama") ?? "",
+    };
+    return initialEndpoints;
+  });
+
   const isDirty = selected !== baseline;
 
   useEffect(() => {
     setStatuses(credentialStatuses);
   }, [credentialStatuses]);
 
-  const handleSave = () => {
+  useEffect(() => {
+    const next: Record<ProviderId, string> = {
+      openai: configMap.get("openai") ?? "",
+      anthropic: configMap.get("anthropic") ?? "",
+      ollama: configMap.get("ollama") ?? "",
+    };
+    setEndpoints(next);
+  }, [providerConfigs]);
+
+  const handleSaveProvider = () => {
     setMessage(null);
     startTransition(async () => {
       try {
@@ -50,12 +86,27 @@ export function ProviderForm({
           providerId: selected,
           setAsDefault: true,
         });
-        // Move the baseline so Save greys out until the user changes
-        // selection again.
         setBaseline(selected);
         setMessage("Provider preference saved.");
       } catch (err) {
         setMessage(err instanceof Error ? err.message : "Failed to save.");
+      }
+    });
+  };
+
+  const handleSaveEndpoint = (providerId: ProviderId) => {
+    setMessage(null);
+    startTransition(async () => {
+      try {
+        const baseURL = endpoints[providerId]?.trim() || undefined;
+        await saveAIProviderConfig({
+          providerId,
+          metadata: baseURL ? { baseURL } : {},
+          setAsDefault: false,
+        });
+        setMessage("Endpoint saved.");
+      } catch (err) {
+        setMessage(err instanceof Error ? err.message : "Failed to save endpoint.");
       }
     });
   };
@@ -93,7 +144,7 @@ export function ProviderForm({
         </p>
       </div>
       <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={isPending || !isDirty} size="sm">
+        <Button onClick={handleSaveProvider} disabled={isPending || !isDirty} size="sm">
           {isPending ? "Saving..." : "Save"}
         </Button>
         {message && (
@@ -122,7 +173,9 @@ export function ProviderForm({
                   <div className="text-sm font-medium">{provider.label}</div>
                   <span className="rounded-sm border border-border/60 bg-card/60 px-2 py-1 text-xs text-muted-foreground">
                     {hasCredential
-                      ? "Saved key"
+                      ? provider.id === "ollama"
+                        ? "Local instance"
+                        : "Saved key"
                       : hasInvalidCredential
                         ? "Key needs replacement"
                         : "No saved key"}
@@ -139,6 +192,40 @@ export function ProviderForm({
                     }));
                   }}
                 />
+                {provider.id !== "ollama" && (
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs text-muted-foreground">
+                      Custom endpoint (optional)
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        type="url"
+                        value={endpoints[provider.id] ?? ""}
+                        onChange={(e) =>
+                          setEndpoints((prev) => ({
+                            ...prev,
+                            [provider.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="https://api.example.com/v1"
+                        disabled={isPending}
+                        className="h-8 text-xs"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={isPending}
+                        onClick={() => handleSaveEndpoint(provider.id)}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Override the default API base URL for this provider.
+                    </p>
+                  </div>
+                )}
               </div>
             );
           })}

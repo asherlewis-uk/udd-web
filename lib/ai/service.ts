@@ -57,6 +57,14 @@ function formatAITaskError(
     return `The saved ${provider.label} credential could not be used. Replace or delete it, then retry the task.`;
   }
 
+  if (/No .* API key configured/i.test(message)) {
+    return message;
+  }
+
+  if (/UDD_DEFAULT_AI_BASE_URL is not configured/i.test(message)) {
+    return "Ollama is not configured. Set UDD_DEFAULT_AI_BASE_URL in your environment.";
+  }
+
   return message;
 }
 
@@ -183,6 +191,7 @@ export async function runAITask(taskId: string): Promise<void> {
         {
           provider,
           credential,
+          ownerId,
           abortSignal: controller.signal,
           hooks: {
             onStart: async ({ provider }) => {

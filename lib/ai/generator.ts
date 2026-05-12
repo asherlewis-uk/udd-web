@@ -2,6 +2,7 @@ import { streamText, Output } from "ai";
 import * as z from "zod";
 import type { AITaskKind, AITaskResult } from "@/lib/ai/types";
 import { getActiveProvider, type ProviderConfig } from "@/lib/ai/providers";
+import { createLanguageModel } from "@/lib/ai/providers/server";
 import {
   buildSystemPrompt,
   buildUserPrompt,
@@ -17,22 +18,6 @@ import {
  */
 function maxOutputTokensFor(kind: AITaskKind): number {
   return kind === "scaffold" ? 8000 : 4000;
-}
-
-function gatewayProviderOptionsFor(
-  provider: ProviderConfig,
-  credential: string | null | undefined,
-) {
-  if (!credential) return undefined;
-
-  return {
-    gateway: {
-      only: [provider.id],
-      byok: {
-        [provider.id]: [{ apiKey: credential }],
-      },
-    },
-  };
 }
 
 /**
@@ -87,6 +72,8 @@ export type GenerateOptions = {
    * Must never be returned to the client.
    */
   credential?: string | null;
+  /** Owner ID for resolving per-user custom endpoint configuration. */
+  ownerId?: string;
 };
 
 /**
@@ -103,18 +90,18 @@ export async function generateResult(
     await options.hooks.onStart({ provider });
   }
 
-  const providerOptions = gatewayProviderOptionsFor(
+  const model = await createLanguageModel(
     provider,
-    options?.credential,
+    options?.credential ?? null,
+    options?.ownerId,
   );
 
   const result = streamText({
-    model: provider.model,
+    model,
     system: buildSystemPrompt(ctx),
     prompt: buildUserPrompt(ctx),
     maxOutputTokens: maxOutputTokensFor(ctx.kind),
     output: Output.object({ schema: ResultSchema }),
-    ...(providerOptions ? { providerOptions } : {}),
     abortSignal: options?.abortSignal,
   });
 

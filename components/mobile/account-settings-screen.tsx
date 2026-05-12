@@ -39,6 +39,7 @@ export function MobileAccountSettingsScreen({
   savedProviderId,
   credentialStatuses,
   environmentCredentialAvailable,
+  providerConfigs,
 }: {
   email: string;
   displayName: string | null;
@@ -46,6 +47,7 @@ export function MobileAccountSettingsScreen({
   savedProviderId: ProviderId | null;
   credentialStatuses: MobileAccountProviderStatuses;
   environmentCredentialAvailable: boolean;
+  providerConfigs?: Array<{ name: string; config: unknown }>;
 }) {
   const [pending, startTransition] = useTransition();
 

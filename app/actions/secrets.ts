@@ -59,6 +59,9 @@ async function validateProviderCredential(
 }
 
 function getValidationUrl(providerId: ProviderId): string {
+  if (providerId === "ollama") {
+    return "";
+  }
   return providerId === "openai"
     ? "https://api.openai.com/v1/models"
     : "https://api.anthropic.com/v1/models";
@@ -72,10 +75,14 @@ function getValidationHeaders(
     return { Authorization: `Bearer ${apiKey}` };
   }
 
-  return {
-    "anthropic-version": "2023-06-01",
-    "x-api-key": apiKey,
-  };
+  if (providerId === "anthropic") {
+    return {
+      "anthropic-version": "2023-06-01",
+      "x-api-key": apiKey,
+    };
+  }
+
+  return {};
 }
 
 export async function saveProviderCredential(
@@ -88,6 +95,10 @@ export async function saveProviderCredential(
 
   const normalized = providerId?.toLowerCase();
   if (!isProviderId(normalized)) throw new Error("Invalid provider id");
+
+  if (normalized === "ollama") {
+    throw new Error("Ollama does not require an API key");
+  }
 
   if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length < 20) {
     throw new Error("API key is too short or empty");
@@ -126,6 +137,10 @@ export async function getProviderCredentialStatuses(): Promise<
 
   const result = {} as Record<ProviderId, ProviderCredentialStatus>;
   for (const pid of Object.keys(PROVIDERS) as ProviderId[]) {
+    if (pid === "ollama") {
+      result[pid] = process.env.UDD_DEFAULT_AI_BASE_URL ? "valid" : "missing";
+      continue;
+    }
     result[pid] = await getSecretStatus(user.id, PROVIDER_KEY_KIND, pid);
   }
   return result;

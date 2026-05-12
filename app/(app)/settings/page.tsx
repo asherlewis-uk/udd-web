@@ -5,7 +5,7 @@ import { ProviderForm } from "@/components/settings/provider-form";
 import { MobileAccountSettingsScreen } from "@/components/mobile/account-settings-screen";
 import { Button } from "@/components/ui/button";
 import { getSession } from "@/lib/auth-session";
-import { getProfileDisplayName, getDefaultAIProviderConfig } from "@/lib/db/queries";
+import { getProfileDisplayName, getDefaultAIProviderConfig, getAIProviderConfigs } from "@/lib/db/queries";
 import { getProvider, isProviderId, type ProviderId } from "@/lib/ai/providers";
 import {
   getProviderCredentialStatusesForOwner,
@@ -27,9 +27,10 @@ export default async function SettingsPage() {
   // Load the user's saved default AI provider (if any). The Select widget
   // falls back to "openai" when nothing is saved so the UI always has a
   // defined value; the action only writes when the user clicks Save.
-  const [defaultProviderConfig, credentialStatuses] = await Promise.all([
+  const [defaultProviderConfig, credentialStatuses, providerConfigs] = await Promise.all([
     getDefaultAIProviderConfig(user.id),
     getProviderCredentialStatusesForOwner(user.id),
+    getAIProviderConfigs(user.id),
   ]);
 
   const savedProviderId: ProviderId | null = isProviderId(defaultProviderConfig?.name)
@@ -47,6 +48,7 @@ export default async function SettingsPage() {
         savedProviderId={savedProviderId}
         credentialStatuses={credentialStatuses}
         environmentCredentialAvailable={environmentCredentialAvailable}
+        providerConfigs={providerConfigs}
       />
 
       <main className="mx-auto hidden w-full max-w-3xl flex-1 flex-col gap-8 px-5 py-8 md:flex">
@@ -74,6 +76,7 @@ export default async function SettingsPage() {
               currentProviderId={savedProviderId}
               credentialStatuses={credentialStatuses}
               environmentCredentialAvailable={environmentCredentialAvailable}
+              providerConfigs={providerConfigs}
             />
           </div>
         </section>

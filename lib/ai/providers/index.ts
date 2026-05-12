@@ -1,35 +1,42 @@
 /**
- * Provider abstraction. The Vercel AI Gateway supports OpenAI and Anthropic
- * zero-config, so switching providers only requires swapping the model string.
- * Callers should use `getActiveProvider()` so the rest of the AI layer stays
- * provider-agnostic.
+ * Provider abstraction. Supports OpenAI, Anthropic (BYOK), and Ollama
+ * (self-hosted / local). Callers should use `getActiveProvider()` so the
+ * rest of the AI layer stays provider-agnostic.
  */
 
-export type ProviderId = "openai" | "anthropic";
+export type ProviderId = "openai" | "anthropic" | "ollama";
 
 export type ProviderConfig = {
   id: ProviderId;
   label: string;
-  /** AI Gateway model string, e.g. "openai/gpt-5-mini" */
+  /** Model ID passed to the AI SDK provider */
   model: string;
-  /** Human-friendly model name for UI surfaces, e.g. "GPT-5 Mini" */
+  /** Human-friendly model name for UI surfaces */
   modelDisplayName: string;
 };
 
 export type ProviderCredentialStatus = "missing" | "valid" | "invalid";
 
+const ollamaModel = process.env.UDD_DEFAULT_AI_MODEL ?? "qwen2.5-coder";
+
 export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
   openai: {
     id: "openai",
     label: "OpenAI",
-    model: "openai/gpt-5-mini",
-    modelDisplayName: "GPT-5 Mini",
+    model: "gpt-4o-mini",
+    modelDisplayName: "GPT-4o Mini",
   },
   anthropic: {
     id: "anthropic",
     label: "Anthropic",
-    model: "anthropic/claude-opus-4.6",
-    modelDisplayName: "Claude Opus 4.6",
+    model: "claude-3-5-sonnet-20241022",
+    modelDisplayName: "Claude 3.5 Sonnet",
+  },
+  ollama: {
+    id: "ollama",
+    label: "Ollama",
+    model: ollamaModel,
+    modelDisplayName: ollamaModel,
   },
 };
 
@@ -38,14 +45,19 @@ const DEFAULT_PROVIDER: ProviderId = "openai";
 export function isProviderId(
   value: string | undefined | null,
 ): value is ProviderId {
-  return value === "openai" || value === "anthropic";
+  return value === "openai" || value === "anthropic" || value === "ollama";
 }
 
 /**
- * The active provider resolves from `UDD_AI_PROVIDER` env var, falling back
- * to OpenAI. Individual callers may override via `getProvider(id)`.
+ * The active provider resolves from environment config.
+ * Self-hosted with UDD_DEFAULT_AI_BASE_URL → Ollama.
+ * Otherwise UDD_AI_PROVIDER env var, falling back to OpenAI.
  */
 export function getActiveProvider(): ProviderConfig {
+  if (process.env.UDD_DEFAULT_AI_BASE_URL) {
+    return PROVIDERS.ollama;
+  }
+
   const envProvider = process.env.UDD_AI_PROVIDER?.toLowerCase();
   if (isProviderId(envProvider)) {
     return PROVIDERS[envProvider];

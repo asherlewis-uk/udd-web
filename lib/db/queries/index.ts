@@ -718,6 +718,21 @@ export async function getAIProviderConfigs(ownerId: string) {
     .where(and(eq(schema.providerConfigs.ownerId, ownerId), eq(schema.providerConfigs.kind, "ai")))
 }
 
+export async function getAIProviderConfigByName(ownerId: string, name: string) {
+  const rows = await db()
+    .select()
+    .from(schema.providerConfigs)
+    .where(
+      and(
+        eq(schema.providerConfigs.ownerId, ownerId),
+        eq(schema.providerConfigs.kind, "ai"),
+        eq(schema.providerConfigs.name, name),
+      ),
+    )
+    .limit(1)
+  return rows[0] ?? null
+}
+
 export async function unsetDefaultAIProviderConfigs(ownerId: string) {
   return db()
     .update(schema.providerConfigs)
