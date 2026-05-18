@@ -21,7 +21,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY . .
 RUN pnpm build \
- && test -f .next/standalone/PROJECTS/udd-web/server.js \
+ && test -f .next/standalone/server.js \
  && test -d .next/static
 
 # ---------- runtime ----------
