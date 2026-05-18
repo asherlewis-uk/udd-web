@@ -8,7 +8,7 @@ export type PromptContext = {
   description?: string | null
 }
 
-const SYSTEM_BASE = `You are a senior full-stack engineer helping build a Next.js 16 + Tailwind v4 + Supabase app.
+const SYSTEM_BASE = `You are a senior full-stack engineer helping build a Next.js 16 + Tailwind v4 + Better Auth + Drizzle ORM app.
 You write focused, production-quality TypeScript. You prefer the App Router, React Server Components by default,
 shadcn/ui primitives (imported from "@/components/ui/*"), and Tailwind utility classes.
 
