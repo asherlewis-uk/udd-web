@@ -12,17 +12,17 @@ export default function AuthErrorPage() {
         <AlertTriangle className="h-5 w-5 text-destructive" aria-hidden />
       </div>
       <div className="flex flex-col gap-2">
-        <h1 className="text-balance text-2xl font-semibold tracking-tight">
+        <h1 className="bg-gradient-to-b from-glass-purple to-glass-coral bg-clip-text text-transparent text-balance text-2xl font-semibold tracking-tight">
           Something went wrong
         </h1>
-        <p className="text-pretty text-sm text-muted-foreground">
+        <p className="text-pretty text-sm text-glass-purple-muted/70">
           We could not complete that authentication request. It may have expired or already been
           used.
         </p>
       </div>
       <Link
         href="/auth/login"
-        className="mx-auto text-sm text-foreground underline-offset-4 hover:underline"
+        className="mx-auto text-sm text-glass-purple underline-offset-4 hover:text-glass-coral transition-colors hover:underline"
       >
         Try signing in again
       </Link>
