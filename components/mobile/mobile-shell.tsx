@@ -85,7 +85,7 @@ function WelcomeScreen() {
       </main>
 
       <footer className="flex items-center justify-between px-4 pb-safe pt-2 text-xs text-muted-foreground">
-        <span>UDD &middot; Universal Dev Desktop</span>
+        <span>UDD &middot; u did dat</span>
         <span className="font-mono">single-user beta</span>
       </footer>
     </div>

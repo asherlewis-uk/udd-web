@@ -21,7 +21,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <div className="w-full max-w-sm">{children}</div>
         </main>
         <footer className="px-6 py-6 text-center text-xs text-muted-foreground">
-          UDD &middot; Universal Dev Desktop
+          UDD &middot; u did dat
         </footer>
       </div>
     </div>
