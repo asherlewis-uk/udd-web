@@ -135,7 +135,7 @@ export function ProviderForm({
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          Choose the default provider. If no saved key exists, UDD uses
+          Choose the default provider. If no saved key exists, u did dat uses
           environment credentials when available.
         </p>
         <p className="w-fit rounded-sm border border-border/60 bg-card/60 px-2 py-1 text-xs text-muted-foreground">

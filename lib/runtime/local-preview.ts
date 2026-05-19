@@ -425,7 +425,7 @@ async function linkHostNodeModules(workspacePath: string): Promise<void> {
   const hostNodeModules = path.join(process.cwd(), "node_modules");
   if (!existsSync(hostNodeModules)) {
     throw new Error(
-      "Local preview cannot start because UDD dependencies are not installed.",
+      "Local preview cannot start because u did dat dependencies are not installed.",
     );
   }
   await symlink(

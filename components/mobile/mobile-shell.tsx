@@ -15,7 +15,7 @@ function WelcomeScreen() {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <header className="flex items-center justify-between border-b border-glass-border/20 px-4 pt-safe pb-2">
-        <span className="bg-gradient-to-r from-glass-purple via-glass-coral to-glass-coral-glow bg-clip-text text-transparent text-sm font-semibold tracking-tight">UDD</span>
+        <span className="bg-gradient-to-r from-glass-purple via-glass-coral to-glass-coral-glow bg-clip-text text-transparent text-sm font-semibold tracking-tight">u did dat</span>
         <nav className="flex items-center gap-2">
           <Button asChild variant="ghost" size="sm" className="border border-glass-border/30 hover:border-glass-purple/50 hover:text-glass-purple transition-colors">
             <Link href="/auth/login">Sign in</Link>
@@ -33,7 +33,7 @@ function WelcomeScreen() {
             The desktop for turning ideas into code.
           </h1>
           <p className="text-pretty mt-3 max-w-sm text-sm leading-relaxed text-glass-purple-muted/80">
-            UDD is a personal, web-based dev workspace. Draft an idea, scaffold
+            u did dat is a personal, web-based dev workspace. Draft an idea, scaffold
             a project, let AI help you edit files, then validate and preview the
             result locally.
           </p>
@@ -83,7 +83,7 @@ function WelcomeScreen() {
       </main>
 
       <footer className="flex items-center justify-between border-t border-glass-border/20 px-4 pb-safe pt-2 text-xs text-glass-purple-muted/60">
-        <span>UDD &middot; u did dat</span>
+        <span>u did dat</span>
         <span className="font-mono">single-user beta</span>
       </footer>
     </div>

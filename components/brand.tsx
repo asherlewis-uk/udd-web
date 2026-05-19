@@ -9,7 +9,7 @@ export function BrandMark({ className }: { className?: string }) {
       )}
       aria-hidden
     >
-      UDD
+      udd
     </div>
   )
 }
@@ -19,7 +19,7 @@ export function Wordmark({ className }: { className?: string }) {
     <div className={cn("flex items-center gap-2.5", className)}>
       <BrandMark />
       <div className="flex flex-col leading-tight">
-        <span className="text-sm font-semibold tracking-tight">UDD</span>
+        <span className="text-sm font-semibold tracking-tight">u did dat</span>
         <span className="text-[10px] uppercase tracking-[0.14em] text-glass-purple-muted">
           Dev Desktop
         </span>

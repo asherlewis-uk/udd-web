@@ -15,7 +15,7 @@ export default function ProjectsLoading() {
 
         <div className="flex flex-1 flex-col justify-center gap-5 py-8">
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-border/50 bg-secondary/50 text-sm font-semibold tracking-wide text-muted-foreground">
-            UDD
+            udd
           </div>
           <div className="mx-auto flex w-full max-w-sm flex-col gap-3 rounded-3xl border border-border/60 bg-secondary/45 p-3">
             <Skeleton className="h-5 w-2/3 rounded-full bg-muted/45" />

@@ -118,7 +118,7 @@ export function AIPromptForm({
     : hasInvalidCredential
       ? "Saved key could not be read. Replace or delete it before using BYOK."
     : activeProvider?.environmentCredentialAvailable
-      ? "No saved key; UDD will use environment credentials unless you add one."
+      ? "No saved key; u did dat will use environment credentials unless you add one."
       : "Add a credential before submitting work to this provider.";
 
   const handleCredentialStatusChange = (
@@ -275,7 +275,7 @@ export function AIPromptForm({
             busy ? (
               "Generation run in progress."
             ) : (
-              "UDD saves files only after validation passes."
+              "u did dat saves files only after validation passes."
             )
           ) : (
             <>

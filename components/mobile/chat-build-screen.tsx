@@ -54,7 +54,8 @@ export function ChatBuildScreen({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-2">
-        {conversation.length === 0 ? (
+        {conversation.length === 0 &&
+        nextAction.code === "start_first_generation" ? (
           <EmptyChatState />
         ) : (
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 py-4">
@@ -96,7 +97,7 @@ function EmptyChatState() {
       <div className="flex max-w-xs flex-col items-center gap-4">
         <div className="flex h-16 w-16 items-center justify-center rounded-full border border-border/60 bg-secondary/45">
           <span className="text-lg font-semibold tracking-wide text-muted-foreground">
-            UDD
+            udd
           </span>
         </div>
         <div className="space-y-1">
@@ -104,7 +105,7 @@ function EmptyChatState() {
             Describe what you want to build
           </h2>
           <p className="text-sm text-muted-foreground">
-            Start with an app idea, feature, or change and UDD will turn it into saved files.
+            Start with an app idea, feature, or change and u did dat will turn it into saved files.
           </p>
         </div>
       </div>

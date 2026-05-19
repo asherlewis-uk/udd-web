@@ -7,7 +7,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="pointer-events-none absolute inset-0 bg-radial-[at_50%_0%] from-glass-purple/8 via-transparent to-transparent" aria-hidden />
       <div className="relative flex min-h-screen flex-col">
         <header className="flex items-center justify-between px-6 py-5">
-          <Link href="/" aria-label="UDD home">
+          <Link href="/" aria-label="u did dat home">
             <Wordmark />
           </Link>
           <Link
@@ -21,7 +21,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
           <div className="w-full max-w-sm">{children}</div>
         </main>
         <footer className="px-6 py-6 text-center text-xs text-glass-purple-muted/60">
-          UDD &middot; u did dat
+          u did dat
         </footer>
       </div>
     </div>

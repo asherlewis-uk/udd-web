@@ -2,7 +2,7 @@ import Link from "next/link"
 import { AlertTriangle } from "lucide-react"
 
 export const metadata = {
-  title: "Authentication error — UDD",
+  title: "Authentication error — u did dat",
 }
 
 export default function AuthErrorPage() {

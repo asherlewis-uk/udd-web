@@ -14,7 +14,7 @@ import {
 import { LogOut } from "lucide-react";
 
 export const metadata = {
-  title: "Settings — UDD",
+  title: "Settings — u did dat",
 };
 
 export default async function SettingsPage() {

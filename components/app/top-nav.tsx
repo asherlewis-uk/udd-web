@@ -16,7 +16,7 @@ export async function TopNav() {
   return (
     <header className="sticky top-0 z-30 hidden h-14 items-center justify-between border-b border-border bg-background/85 px-5 backdrop-blur md:flex">
       <div className="flex items-center gap-6">
-        <Link href="/projects" aria-label="UDD projects">
+        <Link href="/projects" aria-label="u did dat projects">
           <Wordmark />
         </Link>
         <nav className="hidden items-center gap-1 text-sm md:flex">

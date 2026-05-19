@@ -91,7 +91,7 @@ export function MobileProjectSettingsScreen({ project }: { project: Project }) {
             <textarea
               value={idea}
               onChange={(event) => setIdea(event.target.value)}
-              placeholder="Describe what you want UDD to build."
+              placeholder="Describe what you want u did dat to build."
               rows={5}
               className="resize-none rounded-2xl border border-border/60 bg-background/70 px-3 py-3 text-base leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-ring"
             />

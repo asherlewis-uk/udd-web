@@ -5,7 +5,7 @@ import { MobileNewProjectScreen } from "@/components/mobile/new-project-screen"
 import { WorkspaceContainer } from "@/components/workspace/workspace-container"
 
 export const metadata = {
-  title: "New project — UDD",
+  title: "New project — u did dat",
 }
 
 export default function NewProjectPage() {

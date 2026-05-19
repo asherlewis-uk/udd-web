@@ -27,7 +27,7 @@ import type { AITaskStatus, Project, RunStatus } from "@/lib/types";
 import type { MobileProject } from "@/components/mobile/types";
 
 export const metadata = {
-  title: "Projects — UDD",
+  title: "Projects — u did dat",
 };
 
 type SP = Promise<{ q?: string; status?: string }>;

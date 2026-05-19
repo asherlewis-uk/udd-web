@@ -169,8 +169,8 @@ export function deriveNextAction(input: {
       label: "Start a generation run",
       description:
         project.status === "draft"
-          ? "This draft has no saved files yet. Describe the first scaffold or change and UDD will draft saved files."
-          : "No generation runs yet. Describe the first scaffold or change and UDD will draft saved files.",
+          ? "This draft has no saved files yet. Describe the first scaffold or change and u did dat will draft saved files."
+          : "No generation runs yet. Describe the first scaffold or change and u did dat will draft saved files.",
       cta: {
         label: "Use prompt box",
         href: cockpitHref,
@@ -338,6 +338,7 @@ export function deriveNextAction(input: {
 
   if (
     latestRunSession?.status === "starting" ||
+    latestRunSession?.status === "running" ||
     latestRunSession?.status === "stopping"
   ) {
     return {
@@ -345,11 +346,15 @@ export function deriveNextAction(input: {
       label:
         latestRunSession.status === "stopping"
           ? "Stopping local preview"
-          : "Starting local preview",
+          : latestRunSession.status === "running"
+            ? "Local preview running"
+            : "Starting local preview",
       description:
         latestRunSession.status === "stopping"
-          ? "UDD is stopping the local preview process and cleaning up its temporary workspace."
-          : "UDD is validating saved files and starting a bounded local preview when the project shape supports it.",
+          ? "u did dat is stopping the local preview process and cleaning up its temporary workspace."
+          : latestRunSession.status === "running"
+            ? "u did dat is running a local preview of the saved files."
+            : "u did dat is validating saved files and starting a bounded local preview when the project shape supports it.",
       cta: {
         label: "Inspect run",
         href: runHref,
@@ -465,12 +470,10 @@ export function deriveNextAction(input: {
     code: "continue_building",
     label: "Continue building",
     description:
-      latestRunSession.status === "running" && latestRunSession.preview_url
-        ? `${projectFilesCount} saved file${plural(projectFilesCount)} are running in a local preview. Describe the next change to keep going.`
-        : latestRunSummary?.hasLivePreviewEvent ||
-            latestRunSummary?.hasCleanValidationEvent
-          ? `${projectFilesCount} saved file${plural(projectFilesCount)} passed the runtime check. Describe the next change to keep going.`
-          : "Submit a new scaffold, edit, or refactor prompt to continue the project.",
+      latestRunSummary?.hasLivePreviewEvent ||
+        latestRunSummary?.hasCleanValidationEvent
+        ? `${projectFilesCount} saved file${plural(projectFilesCount)} passed the runtime check. Describe the next change to keep going.`
+        : "Submit a new scaffold, edit, or refactor prompt to continue the project.",
     cta: { label: "Use prompt box", href: cockpitHref, action: "local_prompt" },
     reason:
       "The latest task completed, saved files exist, and no newer unvalidated file state is detected. The next generation step must be user-initiated.",
@@ -591,7 +594,7 @@ function nextActionOperation(kind: string): {
       name: "scaffold run",
       sentenceName: "The scaffold run",
       runningDescription:
-        "UDD is scaffolding a replacement file set. Files are checked before anything is saved.",
+        "u did dat is scaffolding a replacement file set. Files are checked before anything is saved.",
     };
   }
 
@@ -601,7 +604,7 @@ function nextActionOperation(kind: string): {
       name: "refactor run",
       sentenceName: "The refactor run",
       runningDescription:
-        "UDD is drafting a refactor against the saved file set and checking it before anything is saved.",
+        "u did dat is drafting a refactor against the saved file set and checking it before anything is saved.",
     };
   }
 
@@ -611,7 +614,7 @@ function nextActionOperation(kind: string): {
       name: "explanation run",
       sentenceName: "The explanation run",
       runningDescription:
-        "UDD is processing an explanation request. Any generated files still validate before save.",
+        "u did dat is processing an explanation request. Any generated files still validate before save.",
     };
   }
 
@@ -621,7 +624,7 @@ function nextActionOperation(kind: string): {
       name: "generation run",
       sentenceName: "The generation run",
       runningDescription:
-        "UDD is generating output and checking it before anything is saved.",
+        "u did dat is generating output and checking it before anything is saved.",
     };
   }
 
@@ -630,6 +633,6 @@ function nextActionOperation(kind: string): {
     name: "edit run",
     sentenceName: "The edit run",
     runningDescription:
-      "UDD is drafting changes against the saved file set and checking them before anything is saved.",
+      "u did dat is drafting changes against the saved file set and checking them before anything is saved.",
   };
 }

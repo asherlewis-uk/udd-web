@@ -382,7 +382,7 @@ function buildMobileConversation({
           {
             label: "State",
             value:
-              "UDD checked the saved app and opened preview when supported.",
+              "u did dat checked the saved app and opened preview when supported.",
           },
           ...(highlight
             ? [
@@ -572,10 +572,10 @@ function generationOperation(
       badge: "Repair",
       sentenceName: "Repair",
       description:
-        "Repair · UDD uses the recorded issues to draft corrected files.",
+        "Repair · u did dat uses the recorded issues to draft corrected files.",
       runningMessage:
-        "UDD is repairing the draft. Files update only if checks pass.",
-      contextMessage: "UDD is repairing the draft from recorded issues.",
+        "u did dat is repairing the draft. Files update only if checks pass.",
+      contextMessage: "u did dat is repairing the draft from recorded issues.",
     };
   }
 
@@ -583,10 +583,10 @@ function generationOperation(
     return {
       badge: "Build",
       sentenceName: "Build",
-      description: "Build · UDD is creating a fresh app from your prompt.",
+      description: "Build · u did dat is creating a fresh app from your prompt.",
       runningMessage:
-        "UDD is building a fresh app. Files update only if checks pass.",
-      contextMessage: "UDD is drafting a fresh app from your prompt.",
+        "u did dat is building a fresh app. Files update only if checks pass.",
+      contextMessage: "u did dat is drafting a fresh app from your prompt.",
     };
   }
 
@@ -594,10 +594,10 @@ function generationOperation(
     return {
       badge: "Refactor",
       sentenceName: "Refactor",
-      description: "Refactor · UDD is reshaping the current app.",
+      description: "Refactor · u did dat is reshaping the current app.",
       runningMessage:
-        "UDD is refactoring the app. Files update only if checks pass.",
-      contextMessage: "UDD is drafting a refactor for the current app.",
+        "u did dat is refactoring the app. Files update only if checks pass.",
+      contextMessage: "u did dat is drafting a refactor for the current app.",
     };
   }
 
@@ -605,9 +605,9 @@ function generationOperation(
     return {
       badge: "Explain",
       sentenceName: "Explanation",
-      description: "Explain · UDD is answering a question about the app.",
-      runningMessage: "UDD is preparing an explanation.",
-      contextMessage: "UDD is preparing an explanation.",
+      description: "Explain · u did dat is answering a question about the app.",
+      runningMessage: "u did dat is preparing an explanation.",
+      contextMessage: "u did dat is preparing an explanation.",
     };
   }
 
@@ -615,19 +615,19 @@ function generationOperation(
     return {
       badge: "Build",
       sentenceName: "Generation",
-      description: "Build · UDD is drafting the requested change.",
+      description: "Build · u did dat is drafting the requested change.",
       runningMessage:
-        "UDD is drafting the change. Files update only if checks pass.",
-      contextMessage: "UDD is drafting the requested change.",
+        "u did dat is drafting the change. Files update only if checks pass.",
+      contextMessage: "u did dat is drafting the requested change.",
     };
   }
 
   return {
     badge: "Edit",
     sentenceName: "Edit",
-    description: "Edit · UDD is changing the current app.",
-    runningMessage: "UDD is editing the app. Files update only if checks pass.",
-    contextMessage: "UDD is drafting changes for the current app.",
+    description: "Edit · u did dat is changing the current app.",
+    runningMessage: "u did dat is editing the app. Files update only if checks pass.",
+    contextMessage: "u did dat is drafting changes for the current app.",
   };
 }
 

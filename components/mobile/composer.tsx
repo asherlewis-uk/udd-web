@@ -119,7 +119,7 @@ export function Composer({
             name="prompt"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Ask UDD to build…"
+            placeholder="Ask u did dat to build…"
             autoComplete="off"
             required
             disabled={disabled}

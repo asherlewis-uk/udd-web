@@ -44,7 +44,7 @@ function formatAITaskError(
       message,
     )
   ) {
-    return "UDD could not authenticate with Vercel AI Gateway. Configure AI_GATEWAY_API_KEY or Vercel OIDC; stored provider keys still route through AI Gateway.";
+    return "u did dat could not authenticate with Vercel AI Gateway. Configure AI_GATEWAY_API_KEY or Vercel OIDC; stored provider keys still route through AI Gateway.";
   }
 
   if (
