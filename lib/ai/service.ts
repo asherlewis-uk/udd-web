@@ -414,6 +414,9 @@ async function validateGeneratedResult(
   result: AITaskResult,
   kind: AITaskKind,
 ): Promise<ValidationReport> {
+  if (!result.files) {
+    return validateProject([], { newPaths: new Set() });
+  }
   const generated: ValidationFile[] = result.files.map((f) => ({
     path: f.path,
     content: f.content,

@@ -18,7 +18,7 @@ function isPublicPath(pathname: string) {
 }
 
 function isMobilePath(pathname: string) {
-  return pathname.startsWith("/m/")
+  return pathname === "/m" || pathname.startsWith("/m/")
 }
 
 function isMobileUA(ua: string | null) {

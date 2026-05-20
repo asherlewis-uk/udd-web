@@ -25,9 +25,8 @@ export default async function MobileSettingsPage() {
   if (!session) redirect("/auth/login")
   const user = session.user
 
-  const displayName = await getProfileDisplayName(user.id)
-
-  const [defaultProviderConfig, credentialStatuses, providerConfigs] = await Promise.all([
+  const [displayName, defaultProviderConfig, credentialStatuses, providerConfigs] = await Promise.all([
+    getProfileDisplayName(user.id),
     getDefaultAIProviderConfig(user.id),
     getProviderCredentialStatusesForOwner(user.id),
     getAIProviderConfigs(user.id),

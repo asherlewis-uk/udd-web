@@ -1,4 +1,3 @@
-import { notFound } from "next/navigation";
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth-session";
 
@@ -12,7 +11,7 @@ export default async function RunPage({
   const session = await getSession();
   if (!session) redirect("/auth/login");
 
-  redirect(`/projects/${id}`);
+  redirect(`/projects/${id}?panel=run`);
 }
 
 

@@ -207,7 +207,7 @@ export default async function WorkspacePage({
   let selectedDesktopTask: AITaskRow | null = null;
   let selectedDesktopTaskEvents: SelectedTaskEvent[] = [];
   let selectedDesktopTaskPrompt: string | null = null;
-  if (selectedTaskRaw) {
+  if (selectedTaskRaw && selectedTaskRaw.projectId === id) {
     selectedDesktopTask = mapAITask(selectedTaskRaw) as AITaskRow;
     const [eventsRaw, promptRow] = await Promise.all([
       getAITaskEvents(selectedDesktopTask.id, user.id),

@@ -11,5 +11,5 @@ export default async function ProjectSettingsPage({
   const session = await getSession()
   if (!session) redirect("/auth/login")
 
-  redirect(`/projects/${id}`)
+  redirect(`/projects/${id}?panel=settings`)
 }

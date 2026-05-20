@@ -386,7 +386,7 @@ function buildMobileConversation({
     )
     const completedEvent = latestEventByKind(taskEvents, "completed")
     const completedFileCount =
-      completedEvent?.payload.file_count ?? output?.files.length ?? 0
+      completedEvent?.payload.file_count ?? output?.files?.length ?? 0
     const canRepair =
       entry.task.status === "failed" &&
       hasBlockingValidationEvidence(taskEvents)

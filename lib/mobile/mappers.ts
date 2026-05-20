@@ -24,6 +24,19 @@ export function toMobileProject(
   };
 }
 
+const RUN_STATUS_VALUES: readonly string[] = [
+  "idle",
+  "starting",
+  "running",
+  "stopping",
+  "stopped",
+  "error",
+];
+
+function isRunStatus(value: string): value is RunStatus {
+  return RUN_STATUS_VALUES.includes(value);
+}
+
 export function toMobileRunSession(session: {
   id: string;
   status: string;
@@ -35,7 +48,7 @@ export function toMobileRunSession(session: {
 }): MobileRunSession {
   return {
     id: session.id,
-    status: session.status as RunStatus,
+    status: isRunStatus(session.status) ? session.status : "idle",
     previewUrl: session.preview_url,
     error: session.error,
     createdLabel: formatRelative(session.created_at),

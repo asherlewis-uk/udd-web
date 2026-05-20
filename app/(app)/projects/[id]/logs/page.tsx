@@ -11,5 +11,5 @@ export default async function LogsPage({
   const session = await getSession()
   if (!session) redirect("/auth/login")
 
-  redirect(`/projects/${id}`)
+  redirect(`/projects/${id}?panel=logs`)
 }
