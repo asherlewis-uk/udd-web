@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { AccountForm } from "@/components/settings/account-form";
 import { AccountDangerZone } from "@/components/settings/account-danger-zone";
 import { ProviderForm } from "@/components/settings/provider-form";
-import { MobileAccountSettingsScreen } from "@/components/mobile/account-settings-screen";
 import { Button } from "@/components/ui/button";
 import { getSession } from "@/lib/auth-session";
 import { getProfileDisplayName, getDefaultAIProviderConfig, getAIProviderConfigs } from "@/lib/db/queries";
@@ -40,28 +39,17 @@ export default async function SettingsPage() {
   const environmentCredentialAvailable = hasGatewayEnvironmentCredential();
 
   return (
-    <>
-      <MobileAccountSettingsScreen
-        email={user.email ?? ""}
-        displayName={displayName}
-        currentProviderId={provider.id}
-        savedProviderId={savedProviderId}
-        credentialStatuses={credentialStatuses}
-        environmentCredentialAvailable={environmentCredentialAvailable}
-        providerConfigs={providerConfigs}
-      />
-
-      <main className="mx-auto hidden w-full max-w-3xl flex-1 flex-col gap-8 px-5 py-8 md:flex">
+    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-8 px-5 py-8">
         <div>
-          <h1 className="text-2xl font-semibold">Settings</h1>
+          <h1 className="text-2xl font-semibold bg-gradient-to-r from-glass-purple to-glass-coral bg-clip-text text-transparent">Settings</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
             Account details, provider selection, and credential management.
           </p>
         </div>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">Profile</h2>
-          <div className="rounded-lg border border-border/70 bg-card/80 p-6 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
+          <h2 className="text-sm font-semibold text-glass-purple-muted">Profile</h2>
+          <div className="rounded-lg liquid-glass prismatic-border bg-card/60 p-6 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
             <AccountForm
               email={user.email ?? ""}
               initialDisplayName={displayName ?? ""}
@@ -70,8 +58,8 @@ export default async function SettingsPage() {
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">Provider selection</h2>
-          <div className="rounded-lg border border-border/70 bg-card/80 p-6 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
+          <h2 className="text-sm font-semibold text-glass-purple-muted">Provider selection</h2>
+          <div className="rounded-lg liquid-glass prismatic-border bg-card/60 p-6 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
             <ProviderForm
               currentProviderId={savedProviderId}
               credentialStatuses={credentialStatuses}
@@ -82,8 +70,8 @@ export default async function SettingsPage() {
         </section>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold">Session</h2>
-          <div className="flex items-center justify-between rounded-lg border border-border/70 bg-card/80 p-5 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
+          <h2 className="text-sm font-semibold text-glass-purple-muted">Session</h2>
+          <div className="flex items-center justify-between rounded-lg liquid-glass prismatic-border bg-card/60 p-5 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]">
             <div>
               <div className="text-sm font-medium">Sign out of this device</div>
               <div className="text-xs text-muted-foreground">
@@ -100,7 +88,6 @@ export default async function SettingsPage() {
         </section>
 
         <AccountDangerZone />
-      </main>
-    </>
+    </main>
   );
 }

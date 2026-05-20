@@ -40,7 +40,7 @@ export function ProjectCard({
   const archived = project.status === "archived"
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-lg border border-border bg-card backdrop-blur-md transition hover:border-border/80 hover:bg-card/80">
+    <div className="group relative flex flex-col overflow-hidden rounded-lg liquid-glass prismatic-border bg-card/60 backdrop-blur-md transition hover:bg-card/80 hover:shadow-lg hover:shadow-glass-purple/5">
       <Link
         href={`/projects/${project.id}`}
         className="flex flex-1 flex-col gap-4 p-5 outline-none focus-visible:bg-card/90"
@@ -51,16 +51,16 @@ export function ProjectCard({
               <h3 className="truncate text-base font-medium tracking-tight">{project.name}</h3>
               <StatusPill status={project.status} />
             </div>
-            <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
+            <p className="mt-1 truncate font-mono text-[11px] text-glass-purple-muted/60">
               {project.slug}
             </p>
           </div>
         </div>
-        <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+        <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground group-hover:text-glass-purple-muted/90">
           {project.description || project.idea || "No description yet."}
         </p>
         {activity ? (
-          <div className="mt-auto border-t border-border pt-3">
+          <div className="mt-auto border-t border-glass-border/20 pt-3">
             <ActivitySummary activity={activity} />
           </div>
         ) : (

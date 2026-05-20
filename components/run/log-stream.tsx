@@ -48,11 +48,11 @@ export function LogStream({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-border/70 bg-[oklch(0.13_0_0)] shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]",
+        "overflow-hidden rounded-lg liquid-glass prismatic-border bg-black/40 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]",
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-background/55 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 border-b border-glass-border/20 bg-background/55 px-3 py-2">
         <span className="font-mono text-[10px] uppercase text-muted-foreground">
           Runtime logs
         </span>
@@ -70,7 +70,7 @@ export function LogStream({
           events.map((e) => (
             <div
               key={e.id}
-              className="flex gap-3 border-b border-border/20 py-1 last:border-b-0"
+              className="flex gap-3 border-b border-glass-border/20 py-1 last:border-b-0"
             >
               <span className="shrink-0 text-muted-foreground/60">
                 {new Date(e.created_at).toLocaleTimeString()}

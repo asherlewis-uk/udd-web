@@ -66,8 +66,8 @@ export function ProjectTabs({ projectId }: { projectId: string }) {
             className={cn(
               "inline-flex items-center justify-center rounded-sm border-b-2 p-2 transition",
               active
-                ? "border-foreground text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
+                ? "border-glass-coral text-foreground"
+                : "border-transparent text-glass-purple-muted/60 hover:text-glass-purple",
             )}
           >
             <Icon className="h-4 w-4" />

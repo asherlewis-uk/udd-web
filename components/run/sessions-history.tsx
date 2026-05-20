@@ -14,7 +14,7 @@ type SessionRow = {
 export function SessionsHistory({ sessions }: { sessions: SessionRow[] }) {
   if (sessions.length === 0) return null;
   return (
-    <ul className="flex flex-col divide-y divide-border/60 overflow-hidden rounded-lg border border-border/70 bg-card/70">
+    <ul className="flex flex-col divide-y divide-glass-border/20 overflow-hidden rounded-lg liquid-glass prismatic-border bg-card/60">
       {sessions.map((s) => (
         <li
           key={s.id}

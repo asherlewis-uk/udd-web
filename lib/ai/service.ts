@@ -309,7 +309,7 @@ export async function runAITask(taskId: string): Promise<void> {
 
     await writeEvent("completed", {
       summary: result.summary,
-      file_count: result.files.length,
+      file_count: result.files?.length ?? 0,
     });
 
     // Touch the parent project so list sorting reflects activity.
@@ -355,7 +355,7 @@ async function persistFiles(
   result: AITaskResult,
   kind: AITaskKind,
 ): Promise<void> {
-  if (!result.files.length) return;
+    if (!result.files?.length) return;
 
   const files = result.files.map((f) => ({
     path: f.path,

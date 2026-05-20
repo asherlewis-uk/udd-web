@@ -24,11 +24,11 @@ export function PreviewPanel({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border border-border/70 bg-card/85 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]",
+        "overflow-hidden rounded-lg liquid-glass prismatic-border bg-card/60 shadow-[0_24px_80px_-56px_rgba(0,0,0,0.95)]",
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-background/55 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-glass-border/20 bg-background/55 px-3 py-2">
         <span className="font-mono text-[10px] uppercase text-muted-foreground">
           Local preview
         </span>
@@ -58,7 +58,7 @@ export function PreviewPanel({
           className="h-128 w-full bg-white"
         />
       ) : (
-        <div className="relative flex min-h-88 items-center justify-center bg-[oklch(0.12_0_0)] p-8">
+        <div className="relative flex min-h-88 items-center justify-center bg-black/40 p-8">
           <div
             aria-hidden
             className="absolute inset-0 opacity-[0.05]"
@@ -72,7 +72,7 @@ export function PreviewPanel({
           <div className="relative flex flex-col items-center gap-4 text-center">
             {status === "running" ? (
               <>
-                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-destructive/40 bg-destructive/10 text-destructive">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-glass-border/30 bg-background/70 text-destructive">
                   <CircleAlert className="h-5 w-5" />
                 </div>
                 <div>
@@ -87,7 +87,7 @@ export function PreviewPanel({
               </>
             ) : status === "starting" ? (
               <>
-                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border/70 bg-background/70">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-glass-border/30 bg-background/70">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
                 <div>
@@ -102,7 +102,7 @@ export function PreviewPanel({
               </>
             ) : status === "stopping" ? (
               <>
-                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border/70 bg-background/70">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-glass-border/30 bg-background/70">
                   <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 </div>
                 <div className="text-sm text-muted-foreground">
@@ -111,7 +111,7 @@ export function PreviewPanel({
               </>
             ) : status === "stopped" ? (
               <>
-                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border/70 bg-background/70">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-glass-border/30 bg-background/70">
                   <Square className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
@@ -135,7 +135,7 @@ export function PreviewPanel({
               </>
             ) : (
               <>
-                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-border/70 bg-background/70">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-glass-border/30 bg-background/70">
                   <Play className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>

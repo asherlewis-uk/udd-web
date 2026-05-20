@@ -37,7 +37,7 @@ export function ProjectFilters({
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <InputGroup className="w-full sm:max-w-sm">
+      <InputGroup className="w-full sm:max-w-sm liquid-glass prismatic-inner rounded-lg p-px">
         <InputGroupAddon>
           <Search className="h-4 w-4" />
         </InputGroupAddon>
@@ -46,6 +46,7 @@ export function ProjectFilters({
           defaultValue={initialQuery}
           onChange={(e) => update({ q: e.target.value || null })}
           aria-label="Search projects"
+          className="placeholder:text-glass-purple-muted/50"
         />
       </InputGroup>
       <ToggleGroup
