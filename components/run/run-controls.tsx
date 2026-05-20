@@ -48,7 +48,7 @@ export function RunControls({
         size="sm"
         onClick={handleStop}
         disabled={pending}
-        className="h-8 gap-1.5 rounded-md border-border/70 bg-background/60"
+        className="h-8 gap-1.5 rounded-md border-glass-border/30 bg-background/60"
       >
         {pending ? (
           <Spinner className="h-3.5 w-3.5" />
@@ -84,7 +84,7 @@ export function RunControls({
       size="sm"
       onClick={handleStart}
       disabled={pending || !canStart}
-      className="h-8 gap-1.5 rounded-md"
+      className="h-8 gap-1.5 rounded-md bg-linear-to-r from-glass-purple to-glass-coral hover:from-glass-purple/90 hover:to-glass-coral/90 text-white shadow-lg shadow-glass-purple/20"
     >
       {pending ? (
         <Spinner className="h-3.5 w-3.5" />

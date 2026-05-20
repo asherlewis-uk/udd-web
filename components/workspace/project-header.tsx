@@ -7,19 +7,19 @@ import type { Project } from "@/lib/types"
 
 export function ProjectHeader({ project }: { project: Project }) {
   return (
-    <div className="border-b border-border bg-background">
+    <div className="border-b border-glass-border/30 bg-background/80 backdrop-blur">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-3 px-5 pt-3">
         <Link
           href="/projects"
           className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
+          <ChevronLeft className="h-3.5 w-3.5 text-glass-purple-muted/50" />
           All projects
         </Link>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 flex-col gap-1">
             <div className="flex items-center gap-3">
-              <h1 className="truncate text-base font-medium tracking-tight">{project.name}</h1>
+              <h1 className="truncate text-base font-medium tracking-tight bg-gradient-to-r from-glass-purple to-glass-coral bg-clip-text text-transparent">{project.name}</h1>
               <StatusPill status={project.status} />
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

@@ -90,7 +90,7 @@ export function CreateProjectForm() {
         </Field>
         {error ? <FieldError>{error}</FieldError> : null}
         <div className="flex items-center justify-end gap-2 pt-2">
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending} className="bg-linear-to-r from-glass-purple to-glass-coral hover:from-glass-purple/90 hover:to-glass-coral/90 text-white shadow-lg shadow-glass-purple/20">
             {pending ? <Spinner className="mr-2" /> : null}
             Create project
           </Button>

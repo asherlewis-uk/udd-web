@@ -2,11 +2,11 @@ import { cn } from "@/lib/utils";
 import type { RunStatus } from "@/lib/types";
 
 const TONE: Record<RunStatus, string> = {
-  idle: "border-border bg-card text-muted-foreground",
-  starting: "border-border bg-card text-foreground",
+  idle: "border-glass-border/30 bg-card/60 text-muted-foreground",
+  starting: "border-glass-border/30 bg-card/60 text-foreground",
   running: "border-accent/40 bg-accent/10 text-accent",
-  stopping: "border-border bg-card text-foreground",
-  stopped: "border-border bg-secondary text-muted-foreground",
+  stopping: "border-glass-border/30 bg-card/60 text-foreground",
+  stopped: "border-glass-border/30 bg-secondary text-muted-foreground",
   error: "border-destructive/40 bg-destructive/10 text-destructive",
 };
 

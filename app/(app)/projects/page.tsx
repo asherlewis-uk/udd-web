@@ -13,7 +13,6 @@ import {
 import { ProjectCard } from "@/components/projects/project-card";
 import type { ProjectActivity } from "@/components/projects/activity-summary";
 import { ProjectFilters } from "@/components/projects/project-filters";
-import { MobileProjectsListScreen } from "@/components/mobile/projects-list-screen";
 import { getSession } from "@/lib/auth-session";
 import {
   getProfileDisplayName,
@@ -24,7 +23,6 @@ import {
 import { mapProjectList } from "@/lib/db/mappers";
 import { formatRelative } from "@/lib/slug";
 import type { AITaskStatus, Project, RunStatus } from "@/lib/types";
-import type { MobileProject } from "@/components/mobile/types";
 
 export const metadata = {
   title: "Projects — u did dat",
@@ -50,8 +48,6 @@ export default async function ProjectsPage({
   ]);
   const projects = mapProjectList(projectsRaw) as Project[];
   const allProjects = mapProjectList(allProjectsRaw) as Project[];
-  const mobileProjects = allProjects.map(toMobileProject);
-
   // Batch-fetch latest AI task and latest run session for activity surfacing.
   const activityMap = new Map<string, ProjectActivity>();
   if (allProjects.length > 0) {
@@ -97,27 +93,16 @@ export default async function ProjectsPage({
   }
 
   return (
-    <>
-      <div className="md:hidden">
-        <MobileProjectsListScreen
-          projects={mobileProjects}
-          profile={{
-            email: user?.email ?? "",
-            displayName: displayName,
-          }}
-        />
-      </div>
-
-      <main className="mx-auto hidden w-full max-w-6xl flex-1 flex-col gap-8 px-5 py-8 md:flex">
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-5 py-8">
         <section className="flex items-end justify-between gap-4">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+            <h1 className="text-2xl font-semibold tracking-tight bg-gradient-to-r from-glass-purple to-glass-coral bg-clip-text text-transparent">Projects</h1>
             <p className="text-sm text-muted-foreground">
               Every idea lives here as a real project. Search, filter, and open
               one to get to work.
             </p>
           </div>
-          <Button asChild>
+          <Button asChild className="bg-linear-to-r from-glass-purple to-glass-coral hover:from-glass-purple/90 hover:to-glass-coral/90 text-white shadow-lg shadow-glass-purple/20">
             <Link href="/projects/new">
               <Plus className="mr-1.5 h-4 w-4" />
               New project
@@ -128,7 +113,7 @@ export default async function ProjectsPage({
         <ProjectFilters initialQuery={q} initialStatus={status} />
 
         {projects.length === 0 ? (
-          <Empty className="mt-6 border border-dashed border-border bg-card/40">
+          <Empty className="mt-6 liquid-glass prismatic-border bg-card/40">
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 <FolderPlus className="h-5 w-5" />
@@ -145,7 +130,7 @@ export default async function ProjectsPage({
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-              <Button asChild>
+              <Button asChild className="bg-linear-to-r from-glass-purple to-glass-coral hover:from-glass-purple/90 hover:to-glass-coral/90 text-white shadow-lg shadow-glass-purple/20">
                 <Link href="/projects/new">
                   <Plus className="mr-1.5 h-4 w-4" />
                   Create your first project
@@ -164,22 +149,6 @@ export default async function ProjectsPage({
             ))}
           </div>
         )}
-      </main>
-    </>
+    </main>
   );
-}
-
-function toMobileProject(project: Project): MobileProject {
-  return {
-    id: project.id,
-    name: project.name,
-    slug: project.slug,
-    description: project.description,
-    status: project.status,
-    updatedLabel: `Updated ${formatRelative(project.updated_at)}`,
-    lastOpenedLabel: project.last_opened_at
-      ? `Opened ${formatRelative(project.last_opened_at)}`
-      : null,
-    current: false,
-  };
 }

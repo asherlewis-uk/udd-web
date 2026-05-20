@@ -1,43 +1,37 @@
-import { notFound } from "next/navigation";
-import { TaskPoller } from "@/components/ai/task-poller";
-import { RunPoller } from "@/components/run/run-poller";
-import {
-  DesktopWorkspace,
-  normalizeDesktopPanel,
-  type DesktopProjectFile,
-  type DesktopRunEvent,
-  type DesktopSelectedFile,
-} from "@/components/desktop/DesktopWorkspace";
-import { getSession } from "@/lib/auth-session";
-import { formatRelative } from "@/lib/slug";
-import { getRepairDisplayPrompt, getRepairMetadata } from "@/lib/ai/repair";
-import { deriveNextAction } from "@/lib/workspace/next-action";
+import { notFound } from "next/navigation"
+import { TaskPoller } from "@/components/ai/task-poller"
+import { RunPoller } from "@/components/run/run-poller"
+import { MobileShell } from "@/components/mobile/mobile-shell"
+import { getSession } from "@/lib/auth-session"
+import { formatRelative } from "@/lib/slug"
+import { getRepairDisplayPrompt, getRepairMetadata } from "@/lib/ai/repair"
+import { deriveNextAction } from "@/lib/workspace/next-action"
 import {
   getActiveProviderForOwner,
   getProviderCredentialStatusesForOwner,
   hasGatewayEnvironmentCredential,
-} from "@/lib/ai/providers/server";
-import type { Project } from "@/lib/types";
+} from "@/lib/ai/providers/server"
+import type { Project } from "@/lib/types"
 import type {
   AITaskEventPayload,
   AITaskEventRow,
   AITaskKind,
   AITaskResult,
   AITaskRow,
-} from "@/lib/ai/types";
-import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form";
+} from "@/lib/ai/types"
+import type { ActiveProviderInfo } from "@/components/ai/ai-prompt-form"
 import type {
   MobileConversationEntry,
   MobileProject,
   MobileRunEvent,
   MobileRunSession,
-} from "@/components/mobile/types";
+} from "@/components/mobile/types"
 import type {
   ProviderReadiness,
   RunSession,
   RuntimeSummary,
   ValidationSummary,
-} from "@/lib/workspace/next-action";
+} from "@/lib/workspace/next-action"
 import {
   getProjectByIdAndOwner,
   getProjectsForOwner,
@@ -46,13 +40,10 @@ import {
   countProjectFiles,
   getAITasksForProject,
   getProjectFilesForProject,
-  getProjectFileByPath,
   getPromptById,
   getAITaskEvents,
-  getAITaskById,
   getRunEventsForSession,
-  getRunEventsForProject,
-} from "@/lib/db/queries";
+} from "@/lib/db/queries"
 import {
   mapProject,
   mapProjectList,
@@ -61,62 +52,45 @@ import {
   mapAITask,
   mapAITaskEvent,
   mapProjectFile,
-} from "@/lib/db/mappers";
+} from "@/lib/db/mappers"
+import { toMobileProject, toMobileRunSession, toMobileRunEvent } from "@/lib/mobile/mappers"
 
-const CONVERSATION_TASK_LIMIT = 6;
-const CONVERSATION_RUN_LIMIT = 2;
+const CONVERSATION_TASK_LIMIT = 6
+const CONVERSATION_RUN_LIMIT = 2
 
-type LatestTask = AITaskRow;
+type LatestTask = AITaskRow
 
 type LatestRunSession = RunSession & {
-  created_at: string;
-  stopped_at?: string | null;
-  error?: string | null;
-  preview_url?: string | null;
-};
+  created_at: string
+  stopped_at?: string | null
+  error?: string | null
+  preview_url?: string | null
+}
 
 type PromptRow = {
-  id: string;
-  body: string;
-};
+  id: string
+  body: string
+}
 
 type RunEventRow = {
-  id: string;
-  session_id: string;
-  level: string;
-  source: string;
-  message: string;
-  created_at: string;
-};
+  id: string
+  session_id: string
+  level: string
+  source: string
+  message: string
+  created_at: string
+}
 
-type SavedFile = {
-  id: string;
-  path: string;
-  language: string | null;
-  size_bytes: number;
-  updated_at: string;
-};
-
-type SelectedTaskEvent = Pick<AITaskEventRow, "id" | "kind" | "payload" | "created_at">;
-
-export default async function WorkspacePage({
+export default async function MobileWorkspacePage({
   params,
-  searchParams,
 }: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ panel?: string; file?: string; task?: string }>;
+  params: Promise<{ id: string }>
 }) {
-  const { id } = await params;
-  const {
-    panel: requestedPanel,
-    file: requestedFile,
-    task: requestedTaskId,
-  } = await searchParams;
-  const desktopPanel = normalizeDesktopPanel(requestedPanel);
+  const { id } = await params
 
-  const session = await getSession();
-  if (!session) notFound();
-  const user = session.user;
+  const session = await getSession()
+  if (!session) notFound()
+  const user = session.user
 
   const [
     projectRow,
@@ -137,135 +111,56 @@ export default async function WorkspacePage({
     getProjectsForOwner(user.id, { limit: 30 }),
     getProfileDisplayName(user.id),
     countProjectFiles(id, user.id),
-  ]);
+  ])
 
-  if (!projectRow) notFound();
+  if (!projectRow) notFound()
 
-  const project = mapProject(projectRow) as Project;
-  const recentTasks = taskRows.map(mapAITask) as LatestTask[];
-  const latestTask = recentTasks[0] ?? null;
+  const project = mapProject(projectRow) as Project
+  const recentTasks = taskRows.map(mapAITask) as LatestTask[]
+  const latestTask = recentTasks[0] ?? null
   const recentRunSessions = runSessionRows.map(
     mapRunSession,
-  ) as LatestRunSession[];
-  const latestRunSession = recentRunSessions[0] ?? null;
-  const savedFiles = recentFileRows.map(mapProjectFile) as SavedFile[];
-  const count = filesCount;
+  ) as LatestRunSession[]
+  const latestRunSession = recentRunSessions[0] ?? null
+  const savedFiles = recentFileRows.map(mapProjectFile)
+  const count = filesCount
 
-  const desktopFilesPromise =
-    desktopPanel === "files"
-      ? getProjectFilesForProject(id, user.id, { orderByPath: true })
-      : Promise.resolve([]);
-  const desktopProjectLogsPromise =
-    desktopPanel === "logs"
-      ? getRunEventsForProject(id, user.id, { limit: 200 })
-      : Promise.resolve([]);
-  const selectedTaskPromise = requestedTaskId
-    ? getAITaskById(requestedTaskId, user.id)
-    : Promise.resolve(null);
-
-  const [desktopFileRows, desktopProjectLogRows, selectedTaskRaw] =
-    await Promise.all([
-      desktopFilesPromise,
-      desktopProjectLogsPromise,
-      selectedTaskPromise,
-    ]);
-
-  const desktopFiles = (desktopFileRows.map(mapProjectFile) as SavedFile[]).map(
-    (file): DesktopProjectFile => ({
-      id: file.id,
-      path: file.path,
-      language: file.language,
-      size_bytes: file.size_bytes,
-      updated_at: file.updated_at,
-    }),
-  );
-  const selectedDesktopFilePath =
-    desktopFiles.find((file) => file.path === requestedFile)?.path ??
-    desktopFiles[0]?.path ??
-    null;
-
-  let selectedDesktopFile: DesktopSelectedFile | null = null;
-  if (desktopPanel === "files" && selectedDesktopFilePath) {
-    const selectedFileRow = await getProjectFileByPath(
-      id,
-      user.id,
-      selectedDesktopFilePath,
-    );
-    if (selectedFileRow) {
-      const mapped = mapProjectFile(selectedFileRow);
-      selectedDesktopFile = {
-        id: mapped.id,
-        path: mapped.path,
-        language: mapped.language,
-        size_bytes: mapped.size_bytes,
-        updated_at: mapped.updated_at,
-        content: mapped.content,
-      };
-    }
-  }
-
-  let selectedDesktopTask: AITaskRow | null = null;
-  let selectedDesktopTaskEvents: SelectedTaskEvent[] = [];
-  let selectedDesktopTaskPrompt: string | null = null;
-  if (selectedTaskRaw && selectedTaskRaw.projectId === id) {
-    selectedDesktopTask = mapAITask(selectedTaskRaw) as AITaskRow;
-    const [eventsRaw, promptRow] = await Promise.all([
-      getAITaskEvents(selectedDesktopTask.id, user.id),
-      selectedDesktopTask.prompt_id
-        ? getPromptById(selectedDesktopTask.prompt_id, user.id)
-        : Promise.resolve(null),
-    ]);
-    selectedDesktopTaskEvents = eventsRaw.map(
-      mapAITaskEvent,
-    ) as SelectedTaskEvent[];
-    const inputPrompt =
-      typeof (selectedDesktopTask.input as { prompt?: unknown })?.prompt ===
-      "string"
-        ? ((selectedDesktopTask.input as { prompt: string }).prompt as string)
-        : null;
-    selectedDesktopTaskPrompt = promptRow?.body ?? inputPrompt ?? null;
-  }
-
-  const desktopProjectLogs = desktopProjectLogRows.map(
-    mapRunEvent,
-  ) as DesktopRunEvent[];
-
-  const taskIds = recentTasks.map((task) => task.id);
+  const taskIds = recentTasks.map((task) => task.id)
   const promptIds = Array.from(
     new Set(
       recentTasks
         .map((task) => task.prompt_id)
         .filter((promptId): promptId is string => Boolean(promptId)),
     ),
-  );
-  const runSessionIds = recentRunSessions.map((session) => session.id);
+  )
+  const runSessionIds = recentRunSessions.map((session) => session.id)
 
   const promptRowsQuery = promptIds.length
     ? Promise.all(
         promptIds.map(async (promptId) => {
-          const row = await getPromptById(promptId, user.id);
-          return row ? { id: promptId, body: row.body } : null;
+          const row = await getPromptById(promptId, user.id)
+          return row ? { id: promptId, body: row.body } : null
         }),
       ).then((rows) => rows.filter((r): r is PromptRow => r !== null))
-    : Promise.resolve([] as PromptRow[]);
+    : Promise.resolve([] as PromptRow[])
   const taskEventsQuery = taskIds.length
     ? Promise.all(
         taskIds.map(async (taskId) => {
-          const rows = await getAITaskEvents(taskId, user.id, { limit: 300 });
-          return rows.map(mapAITaskEvent) as AITaskEventRow[];
+          const rows = await getAITaskEvents(taskId, user.id, { limit: 300 })
+          return rows.map(mapAITaskEvent) as AITaskEventRow[]
         }),
       ).then((arrays) => arrays.flat())
-    : Promise.resolve([] as AITaskEventRow[]);
+    : Promise.resolve([] as AITaskEventRow[])
   const runEventsQuery = runSessionIds.length
     ? Promise.all(
         runSessionIds.map(async (sessionId) => {
           const rows = await getRunEventsForSession(sessionId, user.id, {
             limit: 120,
-          });
-          return rows.map(mapRunEvent) as RunEventRow[];
+          })
+          return rows.map(mapRunEvent) as RunEventRow[]
         }),
       ).then((arrays) => arrays.flat())
-    : Promise.resolve([] as RunEventRow[]);
+    : Promise.resolve([] as RunEventRow[])
 
   const [
     providerConfig,
@@ -279,21 +174,21 @@ export default async function WorkspacePage({
     promptRowsQuery,
     taskEventsQuery,
     runEventsQuery,
-  ]);
-  const environmentCredentialAvailable = hasGatewayEnvironmentCredential();
+  ])
+  const environmentCredentialAvailable = hasGatewayEnvironmentCredential()
   const activeProviderCredentialStatus =
-    credentialStatuses[providerConfig.id] ?? "missing";
+    credentialStatuses[providerConfig.id] ?? "missing"
   const activeProviderHasSavedCredential =
-    activeProviderCredentialStatus === "valid";
+    activeProviderCredentialStatus === "valid"
   const activeProviderHasInvalidCredential =
-    activeProviderCredentialStatus === "invalid";
+    activeProviderCredentialStatus === "invalid"
   const activeProvider: ActiveProviderInfo = {
     id: providerConfig.id,
     label: providerConfig.label,
     model: providerConfig.model,
     credentialStatuses,
     environmentCredentialAvailable,
-  };
+  }
   const providerReadiness: ProviderReadiness = {
     id: providerConfig.id,
     label: providerConfig.label,
@@ -302,31 +197,31 @@ export default async function WorkspacePage({
     hasInvalidCredential: activeProviderHasInvalidCredential,
     hasEnvironmentCredential: environmentCredentialAvailable,
     ready: activeProviderHasSavedCredential || environmentCredentialAvailable,
-  };
+  }
 
   const promptsById = new Map(
     promptRowsData.map((prompt) => [prompt.id, prompt.body]),
-  );
-  const taskEventsByTaskId = groupTaskEvents(taskEventsData);
-  const runEventsBySessionId = groupRunEvents(runEventsData);
+  )
+  const taskEventsByTaskId = groupTaskEvents(taskEventsData)
+  const runEventsBySessionId = groupRunEvents(runEventsData)
   const latestRunSummary = latestRunSession
     ? summarizeRuntimeEvents(
         runEventsBySessionId.get(latestRunSession.id) ?? [],
       )
-    : null;
+    : null
   const validationSummary = latestTask
     ? extractValidationSummary(taskEventsByTaskId.get(latestTask.id) ?? [])
-    : null;
+    : null
 
   const taskInFlight = recentTasks.some(
     (task) => task.status === "pending" || task.status === "running",
-  );
+  )
   const runInFlight = recentRunSessions.some(
     (session) =>
       session.status === "starting" ||
       session.status === "running" ||
       session.status === "stopping",
-  );
+  )
 
   const nextAction = deriveNextAction({
     project,
@@ -337,19 +232,23 @@ export default async function WorkspacePage({
     latestRunSession,
     latestRunSummary,
     providerReadiness,
-  });
+  })
 
   const latestRunEvents = latestRunSession
     ? (runEventsBySessionId.get(latestRunSession.id) ?? [])
-    : [];
-  const desktopCurrentRunEvents = latestRunEvents as DesktopRunEvent[];
-  const mobileProject = toMobileProject(project, id);
-  const allProjects = mapProjectList(allProjectRows) as Project[];
-  const mobileProjects = allProjects.map((item) => toMobileProject(item, id));
+    : []
+  const mobileProject = toMobileProject(project, id)
+  const allProjects = mapProjectList(allProjectRows) as Project[]
+  const mobileProjects = allProjects.map((item) => toMobileProject(item, id))
   const mobileLatestRunSession = latestRunSession
-    ? toMobileRunSession(latestRunSession)
-    : null;
-  const mobileRunEvents = latestRunEvents.map(toMobileRunEvent);
+    ? toMobileRunSession({
+        ...latestRunSession,
+        preview_url: latestRunSession.preview_url ?? null,
+        stopped_at: latestRunSession.stopped_at ?? null,
+        error: latestRunSession.error ?? null,
+      })
+    : null
+  const mobileRunEvents = latestRunEvents.map(toMobileRunEvent)
   const mobileConversation = buildMobileConversation({
     tasks: recentTasks,
     promptsById,
@@ -357,13 +256,12 @@ export default async function WorkspacePage({
     runSessions: recentRunSessions,
     runEventsBySessionId,
     projectId: id,
-  });
+  })
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <DesktopWorkspace
+    <>
+      <MobileShell
         project={mobileProject}
-        projectRecord={project}
         projects={mobileProjects}
         profile={{
           email: user.email ?? "",
@@ -372,67 +270,16 @@ export default async function WorkspacePage({
         conversation={mobileConversation}
         filesCount={count}
         latestRunSession={mobileLatestRunSession}
-        currentRunEvents={desktopCurrentRunEvents}
-        projectLogEvents={desktopProjectLogs}
+        runEvents={mobileRunEvents}
         nextAction={nextAction}
         activeProvider={activeProvider}
         providerReadiness={providerReadiness}
         taskInFlight={taskInFlight}
-        panel={desktopPanel}
-        files={desktopFiles}
-        selectedFile={selectedDesktopFile}
-        selectedTask={selectedDesktopTask}
-        selectedTaskEvents={selectedDesktopTaskEvents}
-        selectedTaskPrompt={selectedDesktopTaskPrompt}
       />
       <TaskPoller active={taskInFlight} />
       <RunPoller active={runInFlight} />
-    </div>
-  );
-}
-
-function toMobileProject(
-  project: Project,
-  currentProjectId: string,
-): MobileProject {
-  return {
-    id: project.id,
-    name: project.name,
-    slug: project.slug,
-    description: project.description,
-    status: project.status,
-    updatedLabel: `Updated ${formatRelative(project.updated_at)}`,
-    lastOpenedLabel: project.last_opened_at
-      ? `Opened ${formatRelative(project.last_opened_at)}`
-      : null,
-    current: project.id === currentProjectId,
-  };
-}
-
-function toMobileRunSession(session: LatestRunSession): MobileRunSession {
-  return {
-    id: session.id,
-    status: session.status,
-    previewUrl: session.preview_url ?? null,
-    error: session.error ?? null,
-    createdLabel: formatRelative(session.created_at),
-    startedLabel: session.started_at
-      ? formatRelative(session.started_at)
-      : null,
-    stoppedLabel: session.stopped_at
-      ? formatRelative(session.stopped_at)
-      : null,
-  };
-}
-
-function toMobileRunEvent(event: RunEventRow): MobileRunEvent {
-  return {
-    id: event.id,
-    level: event.level,
-    source: event.source,
-    message: event.message,
-    createdLabel: formatRelative(event.created_at),
-  };
+    </>
+  )
 }
 
 function buildMobileConversation({
@@ -443,14 +290,14 @@ function buildMobileConversation({
   runEventsBySessionId,
   projectId,
 }: {
-  tasks: LatestTask[];
-  promptsById: Map<string, string>;
-  taskEventsByTaskId: Map<string, AITaskEventRow[]>;
-  runSessions: LatestRunSession[];
-  runEventsBySessionId: Map<string, RunEventRow[]>;
-  projectId: string;
+  tasks: LatestTask[]
+  promptsById: Map<string, string>
+  taskEventsByTaskId: Map<string, AITaskEventRow[]>
+  runSessions: LatestRunSession[]
+  runEventsBySessionId: Map<string, RunEventRow[]>
+  projectId: string
 }): MobileConversationEntry[] {
-  const rows: MobileConversationEntry[] = [];
+  const rows: MobileConversationEntry[] = []
   const entries = [
     ...tasks.map((task) => ({
       kind: "task" as const,
@@ -465,12 +312,12 @@ function buildMobileConversation({
   ].sort(
     (left, right) =>
       new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
-  );
+  )
 
   for (const entry of entries) {
     if (entry.kind === "run") {
-      const events = runEventsBySessionId.get(entry.session.id) ?? [];
-      const highlight = runEventHighlight(entry.session, events);
+      const events = runEventsBySessionId.get(entry.session.id) ?? []
+      const highlight = runEventHighlight(entry.session, events)
       rows.push({
         id: `run-${entry.session.id}`,
         role: "assistant",
@@ -513,36 +360,36 @@ function buildMobileConversation({
               ]
             : []),
         ],
-      });
-      continue;
+      })
+      continue
     }
 
-    const taskEvents = taskEventsByTaskId.get(entry.task.id) ?? [];
-    const prompt = promptForTask(entry.task, promptsById);
+    const taskEvents = taskEventsByTaskId.get(entry.task.id) ?? []
+    const prompt = promptForTask(entry.task, promptsById)
     if (prompt) {
       rows.push({
         id: `prompt-${entry.task.id}`,
         role: "user",
         createdAt: entry.createdAt,
         body: prompt,
-      });
+      })
     }
 
-    const output = entry.task.output as AITaskResult | null;
-    const operation = generationOperation(entry.task.kind, entry.task.input);
-    const repairMetadata = getRepairMetadata(entry.task.input);
-    const validation = extractValidationSummary(taskEvents);
-    const latestProgress = latestEventByKind(taskEvents, "progress");
+    const output = entry.task.output as AITaskResult | null
+    const operation = generationOperation(entry.task.kind, entry.task.input)
+    const repairMetadata = getRepairMetadata(entry.task.input)
+    const validation = extractValidationSummary(taskEvents)
+    const latestProgress = latestEventByKind(taskEvents, "progress")
     const firstBlockingIssue = taskEvents.find(
       (event) =>
         event.kind === "validation" && event.payload.severity === "blocking",
-    );
-    const completedEvent = latestEventByKind(taskEvents, "completed");
+    )
+    const completedEvent = latestEventByKind(taskEvents, "completed")
     const completedFileCount =
-      completedEvent?.payload.file_count ?? output?.files.length ?? 0;
+      completedEvent?.payload.file_count ?? output?.files?.length ?? 0
     const canRepair =
       entry.task.status === "failed" &&
-      hasBlockingValidationEvidence(taskEvents);
+      hasBlockingValidationEvidence(taskEvents)
 
     rows.push({
       id: `task-${entry.task.id}`,
@@ -624,10 +471,10 @@ function buildMobileConversation({
             ]
           : []),
       ],
-    });
+    })
   }
 
-  return rows;
+  return rows
 }
 
 function validationFact(summary: ValidationSummary): string {
@@ -635,8 +482,8 @@ function validationFact(summary: ValidationSummary): string {
     `${summary.blocking_count} blocking`,
     `${summary.warning_count} warning${summary.warning_count === 1 ? "" : "s"}`,
     `${summary.info_count} info`,
-  ].join(", ");
-  return summary.message ? `${summary.message} (${counts})` : counts;
+  ].join(", ")
+  return summary.message ? `${summary.message} (${counts})` : counts
 }
 
 function taskStatusLabel(status: LatestTask["status"]): string {
@@ -646,8 +493,8 @@ function taskStatusLabel(status: LatestTask["status"]): string {
     completed: "validated and saved",
     failed: "failed",
     cancelled: "cancelled",
-  };
-  return labels[status];
+  }
+  return labels[status]
 }
 
 function runStatusLabel(status: LatestRunSession["status"]): string {
@@ -658,17 +505,17 @@ function runStatusLabel(status: LatestRunSession["status"]): string {
     stopping: "stopping",
     stopped: "stopped",
     error: "failed",
-  };
-  return labels[status];
+  }
+  return labels[status]
 }
 
 type GenerationOperation = {
-  badge: string;
-  sentenceName: string;
-  description: string;
-  runningMessage: string;
-  contextMessage: string;
-};
+  badge: string
+  sentenceName: string
+  description: string
+  runningMessage: string
+  contextMessage: string
+}
 
 function generationOperation(
   kind: AITaskKind,
@@ -683,7 +530,7 @@ function generationOperation(
       runningMessage:
         "u did dat is repairing the draft. Files update only if checks pass.",
       contextMessage: "u did dat is repairing the draft from recorded issues.",
-    };
+    }
   }
 
   if (kind === "scaffold") {
@@ -694,7 +541,7 @@ function generationOperation(
       runningMessage:
         "u did dat is building a fresh app. Files update only if checks pass.",
       contextMessage: "u did dat is drafting a fresh app from your prompt.",
-    };
+    }
   }
 
   if (kind === "refactor") {
@@ -705,7 +552,7 @@ function generationOperation(
       runningMessage:
         "u did dat is refactoring the app. Files update only if checks pass.",
       contextMessage: "u did dat is drafting a refactor for the current app.",
-    };
+    }
   }
 
   if (kind === "explain") {
@@ -715,7 +562,7 @@ function generationOperation(
       description: "Explain · u did dat is answering a question about the app.",
       runningMessage: "u did dat is preparing an explanation.",
       contextMessage: "u did dat is preparing an explanation.",
-    };
+    }
   }
 
   if (kind === "other") {
@@ -726,7 +573,7 @@ function generationOperation(
       runningMessage:
         "u did dat is drafting the change. Files update only if checks pass.",
       contextMessage: "u did dat is drafting the requested change.",
-    };
+    }
   }
 
   return {
@@ -735,7 +582,7 @@ function generationOperation(
     description: "Edit · u did dat is changing the current app.",
     runningMessage: "u did dat is editing the app. Files update only if checks pass.",
     contextMessage: "u did dat is drafting changes for the current app.",
-  };
+  }
 }
 
 function taskStatusMessage(
@@ -744,73 +591,73 @@ function taskStatusMessage(
   operation: GenerationOperation,
 ): string {
   if (task.status === "pending") {
-    return `${operation.sentenceName} queued.`;
+    return `${operation.sentenceName} queued.`
   }
 
   if (task.status === "running") {
-    return operation.runningMessage;
+    return operation.runningMessage
   }
 
   if (task.status === "completed") {
-    const fileCount = output?.files.length ?? 0;
+    const fileCount = output?.files.length ?? 0
     if (fileCount === 0) {
-      return `${operation.sentenceName} finished.`;
+      return `${operation.sentenceName} finished.`
     }
     return `${operation.sentenceName} finished: ${fileCount} file${
       fileCount === 1 ? " is" : "s are"
-    } ready.`;
+    } ready.`
   }
 
   if (task.status === "failed") {
     return output
       ? `${operation.sentenceName} failed before the project was updated.`
-      : `${operation.sentenceName} failed before a draft was recorded.`;
+      : `${operation.sentenceName} failed before a draft was recorded.`
   }
 
-  return `${operation.sentenceName} was cancelled.`;
+  return `${operation.sentenceName} was cancelled.`
 }
 
 function runStatusMessage(session: LatestRunSession): string {
   if (session.status === "starting") {
-    return "Preview is starting.";
+    return "Preview is starting."
   }
 
   if (session.status === "running") {
     return session.preview_url
       ? "Preview is running."
-      : "Preview needs attention; no preview URL was recorded.";
+      : "Preview needs attention; no preview URL was recorded."
   }
 
   if (session.status === "stopping") {
-    return "Preview is stopping.";
+    return "Preview is stopping."
   }
 
   if (session.status === "stopped") {
-    return "Preview stopped.";
+    return "Preview stopped."
   }
 
   if (session.status === "error") {
-    return "Preview could not start.";
+    return "Preview could not start."
   }
 
-  return "Preview will appear here.";
+  return "Preview will appear here."
 }
 
 function promptForTask(
   task: LatestTask,
   promptsById: Map<string, string>,
 ): string | null {
-  const repairDisplayPrompt = getRepairDisplayPrompt(task.input);
-  if (repairDisplayPrompt) return repairDisplayPrompt;
+  const repairDisplayPrompt = getRepairDisplayPrompt(task.input)
+  if (repairDisplayPrompt) return repairDisplayPrompt
 
   if (task.prompt_id) {
-    const prompt = promptsById.get(task.prompt_id);
-    if (prompt?.trim()) return prompt;
+    const prompt = promptsById.get(task.prompt_id)
+    if (prompt?.trim()) return prompt
   }
 
-  if (!task.input || typeof task.input !== "object") return null;
-  const prompt = (task.input as { prompt?: unknown }).prompt;
-  return typeof prompt === "string" && prompt.trim() ? prompt : null;
+  if (!task.input || typeof task.input !== "object") return null
+  const prompt = (task.input as { prompt?: unknown }).prompt
+  return typeof prompt === "string" && prompt.trim() ? prompt : null
 }
 
 function extractValidationSummary(
@@ -818,16 +665,16 @@ function extractValidationSummary(
 ): ValidationSummary | null {
   const summaryEvent = events.find(
     (event) => event.kind === "validation" && event.payload.step === "summary",
-  );
-  if (!summaryEvent) return null;
+  )
+  if (!summaryEvent) return null
 
-  const payload = summaryEvent.payload as AITaskEventPayload;
+  const payload = summaryEvent.payload as AITaskEventPayload
   return {
     message: payload.message ?? "",
     blocking_count: payload.blocking_count ?? 0,
     warning_count: payload.warning_count ?? 0,
     info_count: payload.info_count ?? 0,
-  };
+  }
 }
 
 function latestEventByKind(
@@ -835,19 +682,19 @@ function latestEventByKind(
   kind: AITaskEventRow["kind"],
 ): AITaskEventRow | null {
   for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (events[index].kind === kind) return events[index];
+    if (events[index].kind === kind) return events[index]
   }
-  return null;
+  return null
 }
 
 function runEventHighlight(
   session: LatestRunSession,
   events: RunEventRow[],
 ): RunEventRow | null {
-  if (events.length === 0) return null;
+  if (events.length === 0) return null
 
   if (session.status === "error") {
-    return latestRunEventMatching(events, (event) => event.level === "error");
+    return latestRunEventMatching(events, (event) => event.level === "error")
   }
 
   if (session.status === "running") {
@@ -857,10 +704,10 @@ function runEventHighlight(
           event.message,
         ),
       ) ?? events[events.length - 1]
-    );
+    )
   }
 
-  return events[events.length - 1];
+  return events[events.length - 1]
 }
 
 function summarizeRuntimeEvents(events: RunEventRow[]): RuntimeSummary {
@@ -879,7 +726,7 @@ function summarizeRuntimeEvents(events: RunEventRow[]): RuntimeSummary {
     latestErrorMessage:
       latestRunEventMatching(events, (event) => event.level === "error")
         ?.message ?? null,
-  };
+  }
 }
 
 function latestRunEventMatching(
@@ -887,48 +734,48 @@ function latestRunEventMatching(
   predicate: (event: RunEventRow) => boolean,
 ): RunEventRow | null {
   for (let index = events.length - 1; index >= 0; index -= 1) {
-    if (predicate(events[index])) return events[index];
+    if (predicate(events[index])) return events[index]
   }
-  return null;
+  return null
 }
 
 function formatValidationIssue(payload: AITaskEventPayload): string {
   const location = payload.file_path
     ? `${payload.file_path}${payload.line ? `:${payload.line}` : ""}`
-    : null;
-  const details = [location, payload.message].filter(Boolean).join(" — ");
-  return details || "Blocking validation issue recorded.";
+    : null
+  const details = [location, payload.message].filter(Boolean).join(" — ")
+  return details || "Blocking validation issue recorded."
 }
 
 function hasBlockingValidationEvidence(events: AITaskEventRow[]): boolean {
   return events.some(
     (event) =>
       event.kind === "validation" && event.payload.severity === "blocking",
-  );
+  )
 }
 
 function shortTaskId(taskId: string): string {
-  return taskId.slice(0, 8);
+  return taskId.slice(0, 8)
 }
 
 function groupTaskEvents(
   events: AITaskEventRow[],
 ): Map<string, AITaskEventRow[]> {
-  const groupedEvents = new Map<string, AITaskEventRow[]>();
+  const groupedEvents = new Map<string, AITaskEventRow[]>()
   for (const event of events) {
-    const existingEvents = groupedEvents.get(event.task_id) ?? [];
-    existingEvents.push(event);
-    groupedEvents.set(event.task_id, existingEvents);
+    const existingEvents = groupedEvents.get(event.task_id) ?? []
+    existingEvents.push(event)
+    groupedEvents.set(event.task_id, existingEvents)
   }
-  return groupedEvents;
+  return groupedEvents
 }
 
 function groupRunEvents(events: RunEventRow[]): Map<string, RunEventRow[]> {
-  const groupedEvents = new Map<string, RunEventRow[]>();
+  const groupedEvents = new Map<string, RunEventRow[]>()
   for (const event of events) {
-    const existingEvents = groupedEvents.get(event.session_id) ?? [];
-    existingEvents.push(event);
-    groupedEvents.set(event.session_id, existingEvents);
+    const existingEvents = groupedEvents.get(event.session_id) ?? []
+    existingEvents.push(event)
+    groupedEvents.set(event.session_id, existingEvents)
   }
-  return groupedEvents;
+  return groupedEvents
 }
