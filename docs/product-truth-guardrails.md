@@ -57,9 +57,11 @@ UDD may sit adjacent to Bolt, Lovable, Replit Agent, and v0 in user expectation,
 - No removal of GitNexus, Gortex, agent skills, or MCP server instructions
 - No replacement of `docs/system-state.md` with a new master-state document
 
-## Network Reachability — Tailscale Clarification
+## Network Reachability — Current Implementation
 
-Following the Legion self-host migration, `run_sessions.preview_url` may be written with a Tailscale-routed host (e.g. `http://100.106.121.100:<port>`) instead of `127.0.0.1:<port>`, controlled by the `UDD_PREVIEW_HOST` env var (see `docs/migration/env-lockdown.md`). **Tailscale-routed preview URLs are allowed; truly public preview URLs remain forbidden.** The runtime still binds to `127.0.0.1` inside the host (`lib/runtime/local-preview.ts:466, 547, 665`); only the URL surfaced to the authenticated single user changes. This does not relax the no-public-preview guardrail — Tailscale is a private mesh, not a public network.
+Current source writes `run_sessions.preview_url` as a local endpoint of the form `http://127.0.0.1:<port>` only after the local Next dev process responds. `UDD_PREVIEW_HOST` is not implemented in source, and product copy must not claim Tailscale-routed, hosted, public, or device-reachable preview URLs until code exists and `docs/system-state.md` has been updated with source citations.
+
+**Private-network preview URLs may be reconsidered later, but they are not current behavior.** This does not relax the no-public-preview guardrail.
 
 ## Open Product Questions (deferred, not committed)
 

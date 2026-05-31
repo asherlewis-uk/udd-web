@@ -208,17 +208,17 @@ This is a local development preview only. The runtime binds to `127.0.0.1`, the 
 
 ### Supported providers and option registry
 
-Two AI providers are defined in the single `PROVIDERS` registry: `openai` (`openai/gpt-5-mini`) and `anthropic` (`anthropic/claude-opus-4.6`). UI option labels are derived from that registry by `getProviderOptions`, not duplicated in client components. (lib/ai/providers/index.ts:19–30, 59–62)
+Three AI providers are defined in the single `PROVIDERS` registry: `openai` (`gpt-4o-mini`), `anthropic` (`claude-3-5-sonnet-20241022`), and `ollama` (model from `UDD_DEFAULT_AI_MODEL`, default `qwen2.5-coder`). UI option labels are derived from that registry by `getProviderOptions`, not duplicated in client components. (lib/ai/providers/index.ts:6–40, 72–78)
 
 ### Resolution and generation path
 
-`getActiveProviderForOwner(ownerId, supabase)` first reads the user's active default `provider_configs` row for `kind='ai'`, then falls back to `getActiveProvider()`, which reads `UDD_AI_PROVIDER`, validates it with `isProviderId`, and defaults to `openai` when unset or invalid. (lib/ai/providers/server.ts:19–47, lib/ai/providers/index.ts:44–49)
+`getActiveProviderForOwner(ownerId)` first reads the user's default `provider_configs` row for `kind='ai'`, then falls back to `getActiveProvider()`. `getActiveProvider()` selects `ollama` when `UDD_DEFAULT_AI_BASE_URL` is set; otherwise it reads `UDD_AI_PROVIDER`, validates it with `isProviderId`, and defaults to `openai` when unset or invalid. (lib/ai/providers/server.ts:21–33, lib/ai/providers/index.ts:44–65)
 
 `runAITask` resolves the active provider and then calls `getCredentialForProvider(ownerId, provider.id)`. If a stored credential exists, it passes the decrypted value into `generateResult` as `options.credential`. (lib/ai/service.ts:131–138)
 
-`generateResult` converts a provided credential into AI Gateway request-scoped BYOK provider options: `providerOptions.gateway.only` is limited to the selected provider id, and `providerOptions.gateway.byok[provider.id]` contains `{ apiKey: credential }`. If no credential is stored, `providerOptions` is omitted and the existing environment-managed AI Gateway path remains the fallback. (lib/ai/generator.ts:18–31, 98–107)
+`generateResult` calls `createLanguageModel(provider, credential, ownerId)` and passes the returned direct provider model to `streamText`. OpenAI and Anthropic require a resolved stored credential; Ollama/self-hosted uses `UDD_DEFAULT_AI_BASE_URL` or a per-user custom `baseURL` plus `UDD_DEFAULT_AI_API_KEY` defaulting to `ollama`. (lib/ai/generator.ts:82–155; lib/ai/providers/server.ts:96–148)
 
-Generation failures are normalized before being written to `ai_tasks.error` / `ai_task_events.payload.error`: AI Gateway authentication failures tell the operator to configure `AI_GATEWAY_API_KEY` or Vercel OIDC, while stored-credential authentication failures tell the user to replace or delete the saved provider credential. Secret values are not included in these messages. (lib/ai/service.ts:22–41)
+Generation failures are normalized before being written to `ai_tasks.error` / `ai_task_events.payload.error`: stored-credential authentication failures tell the user to replace or delete the saved provider credential, missing OpenAI/Anthropic credentials surface the direct missing-key error, missing Ollama base URL becomes an Ollama configuration message, and a defensive AI Gateway-authentication branch remains for matching upstream error text. Secret values are not included in these messages. (lib/ai/service.ts:35–69)
 
 ### User surfaces
 
@@ -226,7 +226,7 @@ User-facing provider selection exists in Settings. Desktop Settings labels this 
 
 Settings writes provider preference through `saveAIProviderConfig`; credentials are not stored in provider metadata, and secret-shaped metadata is rejected with copy pointing users to the credential manager. Desktop Settings and global mobile Settings both call that action for provider selection. The old provider switcher component still writes through the same action when rendered, but the primary mobile cockpit does not render it. (components/settings/provider-form.tsx:45–60; components/mobile/account-settings-screen.tsx:64–78, 174–180; components/ai/provider-switcher.tsx:35–51; app/actions/provider-configs.ts:13–44; components/mobile/composer.tsx:89–100)
 
-The primary cockpit page resolves the active provider, provider credential presence flags, and AI Gateway environment fallback state server-side, then passes serializable readiness booleans to the mobile shell, composer, next-action line, and mobile settings surface. (app/(app)/projects/[id]/page.tsx:200–213, 279–294; components/mobile/mobile-shell.tsx:47–80)
+The primary cockpit page resolves the active provider, provider credential presence flags, and the environment fallback flag from `hasGatewayEnvironmentCredential()` server-side, then passes serializable readiness booleans to the mobile shell, composer, next-action line, and mobile settings surface. (app/(app)/projects/[id]/page.tsx:200–213, 279–294; lib/ai/providers/server.ts:66–73; components/mobile/mobile-shell.tsx:47–80)
 
 The primary mobile cockpit does not save credentials inline. Its composer treats readiness as ready only when the selected provider has a saved credential or environment fallback, disables prompt submission otherwise, and links to Settings with copy that says a saved key or environment fallback is needed. The in-cockpit mobile settings surface remains a project-context shortcut/status surface; global mobile `/settings` is the mobile account/provider management surface, displays per-provider credential status badges (Saved/Missing), provides provider selection, and renders `ProviderCredentialControl` for credential save/replace/delete without exposing stored secret values. (components/mobile/composer.tsx:51–53, 89–100, 105–119; components/mobile/settings-screen.tsx:49–76; components/mobile/account-settings-screen.tsx:121–276; components/ai/provider-credential-control.tsx:51–198)
 
@@ -242,9 +242,9 @@ Settings remains the safe credential-management surface for normal replacement/d
 
 **Generation resolution**: `runAITask` calls `getCredentialForProvider(ownerId, provider.id)` immediately after provider selection. If a credential is stored for the active provider, it is decrypted server-side and passed to `generateResult` via `options.credential`. (lib/ai/providers/server.ts:50–59, lib/ai/service.ts:131–138)
 
-**Credential use in API calls**: The resolved credential is forwarded to `streamText` as request-scoped AI Gateway BYOK provider options for the selected provider. No credential is logged, written to events, returned to the client, or included in task output. If no credential is stored, the existing environment-managed AI Gateway path is used. (lib/ai/generator.ts:18–31, 98–107; lib/ai/service.ts:149–178)
+**Credential use in API calls**: The resolved credential is passed server-side into `createLanguageModel`, which creates a direct OpenAI or Anthropic client for the selected provider. Ollama/self-hosted uses an OpenAI-compatible client with the configured base URL and API key. No credential is logged, written to events, returned to the client, or included in task output. (lib/ai/generator.ts:82–155; lib/ai/providers/server.ts:96–148; lib/ai/service.ts:131–178)
 
-**Provider readiness**: Readiness flags are derived from decryptable encrypted-secret rows via `hasSecret` and from a conservative environment fallback check for `AI_GATEWAY_API_KEY` or Vercel. The client receives booleans only, not credential values. (lib/secrets/index.ts:46–71; lib/ai/providers/server.ts:62–74; app/(app)/projects/[id]/page.tsx:200–213; app/(app)/settings/page.tsx:33–43, 75–79)
+**Provider readiness**: Per-provider credential-status flags are derived from decryptable encrypted-secret rows via `getSecretStatus`; Ollama reports valid when `UDD_DEFAULT_AI_BASE_URL` is set. The separate environment fallback flag returns true when `AI_GATEWAY_API_KEY`, `UDD_DEFAULT_AI_BASE_URL`, or `VERCEL=1` is present. The client receives booleans/status labels only, not credential values. (lib/secrets/index.ts:46–71; lib/ai/providers/server.ts:47–73; app/(app)/projects/[id]/page.tsx:200–213; app/(app)/settings/page.tsx:33–43, 75–79)
 
 **Legacy**: `provider_configs.secret_ref` remains null. User credentials are in `user_secrets`, not `provider_configs`. `saveAIProviderConfig` continues to reject secret-shaped metadata and directs users to the credential manager. (app/actions/provider-configs.ts:13–44, 61–82, scripts/004_document_forward_looking.sql:10–13)
 
@@ -260,14 +260,14 @@ Each surface below is labeled **schema only — no app code callers**.
 | `previews` table                     | scripts/001_init_schema.sql  | schema only — no app code callers               | Verified by reading all files in lib/ and app/actions/ |
 | `provider_configs.secret_ref` column | scripts/001_init_schema.sql  | schema only — always null — no app code callers | scripts/004_document_forward_looking.sql               |
 | `user_secrets` table                 | scripts/005_user_secrets.sql | active — read/write by lib/secrets/index.ts     | lib/secrets/index.ts, app/actions/secrets.ts           |
-| Account deletion (deleteAccount)     | app/actions/profile.ts       | IMPLEMENTED — deleteAccount server action with service-role Supabase client deletes auth user (cascades to profiles, projects, project_files, prompts, user_secrets via ON DELETE CASCADE). Mobile and desktop Settings expose confirm dialog. | §Intentional Constraints constraint 6                 |
+| Account deletion (deleteAccount)     | app/actions/profile.ts       | IMPLEMENTED — deleteAccount server action deletes the Better Auth `user` row through Drizzle, relies on database `ON DELETE CASCADE` relationships for owned data, then signs out through Better Auth. Mobile and desktop Settings expose confirm dialog. | §Intentional Constraints constraint 6                 |
 
 `run_sessions.preview_url` is active application schema. It stores only a real local preview endpoint after readiness succeeds, and it is cleared on stop, stale cleanup, and errors. (lib/runtime/service.ts:275–295, 119–126, 367–373, 393–400)
 
-From scripts/004_document_forward_looking.sql:
+Forward-looking schema notes:
 
-- `exports`: _"Schema + RLS are in place; no application code reads or writes this table yet. Kept so the export feature can land without a migration."_
-- `provider_configs.secret_ref`: _"Always null today — user credentials live in user_secrets. Never store raw secrets in this column."_
+- `exports`: schema is present; no application code reads or writes this table yet. It is kept so an export feature can land later without designing the table from scratch.
+- `provider_configs.secret_ref`: always null today — user credentials live in `user_secrets`; never store raw secrets in this column.
 
 ---
 
@@ -282,13 +282,13 @@ From scripts/004_document_forward_looking.sql:
 
 Both pollers call `router.refresh()` on each tick. (components/ai/task-poller.tsx:17, components/run/run-poller.tsx:17)
 
-`router.refresh()` triggers a full re-fetch of the server component tree for the current route. The server component re-queries Supabase and returns the updated state. There is no incremental or delta mechanism.
+`router.refresh()` triggers a full re-fetch of the server component tree for the current route. The server component re-queries PostgreSQL through Drizzle query helpers and returns the updated state. There is no incremental or delta mechanism.
 
 Polling starts when the component mounts with `active=true`. Polling stops when `active` becomes `false` or the component unmounts. The interval is cleared in the `useEffect` cleanup function. (components/ai/task-poller.tsx:14–20, components/run/run-poller.tsx:14–20)
 
 ### Explicit absence
 
-There are no WebSocket connections, no Supabase Realtime subscriptions, and no server-sent events in the codebase. Persisted task/run progress updates reach the client through these refresh pollers. The mobile shell also has local-only UI state for screen selection, drawer visibility, actions menu visibility, and composer draft/optimistic echo; route-level mobile shells have local drawer/action-sheet state only. That state does not replace Supabase re-fetching for durable task/run data. (components/mobile/mobile-shell.tsx:24–42; components/mobile/mobile-route-shell.tsx:23–83; components/mobile/preview-route-screen.tsx; components/mobile/composer.tsx:44–57, 75–87)
+There are no WebSocket connections, realtime subscriptions, or server-sent events in the codebase. Persisted task/run progress updates reach the client through these refresh pollers. The mobile shell also has local-only UI state for screen selection, drawer visibility, actions menu visibility, and composer draft/optimistic echo; route-level mobile shells have local drawer/action-sheet state only. That state does not replace server re-fetching for durable task/run data. (components/mobile/mobile-shell.tsx:24–42; components/mobile/mobile-route-shell.tsx:23–83; components/mobile/preview-route-screen.tsx; components/mobile/composer.tsx:44–57, 75–87)
 
 ---
 
@@ -314,7 +314,7 @@ The cockpit pollers remain refresh-based for durable progress: polling is active
 
 `deriveNextAction` is a pure deterministic function. It consumes only already-loaded persisted state: `projects.status`, the latest `ai_tasks` row, the latest validation summary from `ai_task_events`, `project_files` count and newest `updated_at`, the latest `run_sessions` row, a run-event summary from `run_events`, and active provider readiness from decryptable encrypted-secret rows plus environment fallback detection. It returns a stable `code`, compact description, explicit CTA action kind, and plain-English `reason`, which the server route passes to `MobileShell`. (lib/workspace/next-action.ts:43–124; app/(app)/projects/[id]/page.tsx:246–294)
 
-Provider-blocked recommendations are emitted only when the next useful step would require AI generation and the selected provider has neither a saved credential nor AI Gateway environment fallback. In the primary mobile cockpit, the recovery path is Settings navigation and disabled prompt submission, not inline credential capture. No BYOK, runtime, preview, deploy, or repair behavior is suggested unless its implemented state/action exists. (lib/workspace/next-action.ts:151–169, 216–263, 479–513; components/mobile/composer.tsx:51–53, 89–100; components/mobile/chat-build-screen.tsx:322–331)
+Provider-blocked recommendations are emitted only when the next useful step would require AI generation and the selected provider has neither a saved credential nor the environment fallback flag. In the primary mobile cockpit, the recovery path is Settings navigation and disabled prompt submission, not inline credential capture. No BYOK, runtime, preview, deploy, or repair behavior is suggested unless its implemented state/action exists. (lib/workspace/next-action.ts:151–169, 216–263, 479–513; components/mobile/composer.tsx:51–53, 89–100; components/mobile/chat-build-screen.tsx:322–331)
 
 Generation inspection routes only to detail surfaces: queued/running generation work and data inconsistencies link to the AI task detail, while runtime failures link to the Run surface. Start/continue generation remains local to the prompt box, local preview checks start inline via `startRunAction`, repair starts inline via `repairFailedTask`, and failed tasks retry inline via `retryFailedTask` when provider readiness allows it. The mobile action menu can also start, restart, or stop the latest local preview session through the real runtime actions. (lib/workspace/next-action.ts:176–204, 252–263, 296–327, 361–411, 437–495; components/mobile/composer.tsx:60–119; components/mobile/chat-build-screen.tsx:198–236, 277–331; components/mobile/project-actions-menu.tsx:136–193)
 
@@ -420,4 +420,4 @@ _Why_: The task or session row must be inserted and visible in the UI before bac
 
 **6. Account deletion is implemented through service-role auth deletion.**
 
-`deleteAccount` uses the service-role Supabase client (`supabase.auth.admin.deleteUser`) to delete the authenticated auth user. Database cascades remove profiles, projects, project_files, prompts, and user_secrets through `ON DELETE CASCADE`; mobile and desktop Settings expose a confirm dialog before deletion.
+`deleteAccount` uses Drizzle to delete the authenticated Better Auth `user` row, then calls `auth.api.signOut`. Database cascades remove profiles, projects, project_files, prompts, and user_secrets through `ON DELETE CASCADE`; mobile and desktop Settings expose a confirm dialog before deletion.
